@@ -17,12 +17,102 @@ import ProfileView from './components/ProfileView';
 import { useAuth } from './context/AuthContext';
 import { MapPin, Users, FileSpreadsheet } from 'lucide-react';
 
+// Tab to URL and URL to Tab mappings
+const ROUTE_TO_TAB = {
+  '': 'formatter',
+  '/': 'formatter',
+  '/dashboard': 'formatter',
+  '/formatter': 'formatter',
+  '/customer-summary': 'customer_summary',
+  '/summary': 'customer_summary',
+  '/connection-comparison': 'connection_comparison',
+  '/comparison': 'connection_comparison',
+  '/target-report': 'target_report',
+  '/targets': 'target_report',
+  '/collections': 'collections',
+  '/collector-achievement': 'collector_achievement',
+  '/achievements': 'collector_achievement',
+  '/id-editor': 'id_editor',
+  '/search': 'id_editor',
+  '/update-audit': 'update_audit',
+  '/audit': 'update_audit',
+  '/locations': 'locations',
+  '/collectors': 'collectors',
+  '/profile': 'profile',
+};
+
+const TAB_TO_ROUTE = {
+  formatter: '/',
+  customer_summary: '/customer-summary',
+  connection_comparison: '/connection-comparison',
+  target_report: '/target-report',
+  collections: '/collections',
+  collector_achievement: '/collector-achievement',
+  id_editor: '/id-editor',
+  update_audit: '/update-audit',
+  locations: '/locations',
+  collectors: '/collectors',
+  profile: '/profile',
+};
+
 export default function App() {
   const { user, loading } = useAuth();
-  const [activeTab, setActiveTab] = useState('formatter'); // 'formatter' | 'customer_summary' | 'connection_comparison' | 'target_report' | 'collections' | 'id_editor' | 'update_audit' | 'locations' | 'collectors' | 'profile'
+  
+  const getTabFromCurrentPath = () => {
+    const path = window.location.pathname.replace(/\/+$/, '') || '/';
+    return ROUTE_TO_TAB[path] || null;
+  };
+
+  const [activeTab, setActiveTab] = useState(() => {
+    return getTabFromCurrentPath() || 'formatter';
+  });
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
+
+  // Tab switch handler with URL history push
+  const handleTabChange = (newTab) => {
+    setActiveTab(newTab);
+    const targetRoute = TAB_TO_ROUTE[newTab] || '/';
+    if (window.location.pathname !== targetRoute) {
+      window.history.pushState(null, '', targetRoute);
+    }
+  };
+
+  // URL Path & Wrong URL redirection guard
+  useEffect(() => {
+    if (loading) return;
+
+    if (!user) {
+      // Unauthenticated: always show login page, reset path if on dashboard
+      return;
+    }
+
+    const currentPath = window.location.pathname.replace(/\/+$/, '') || '/';
+    const matchedTab = ROUTE_TO_TAB[currentPath];
+
+    if (!matchedTab || currentPath === '/login') {
+      // Wrong URL or /login when already authenticated -> Redirect cleanly to dashboard '/'
+      window.history.replaceState(null, '', '/');
+      setActiveTab('formatter');
+    } else {
+      setActiveTab(matchedTab);
+    }
+
+    const handlePopState = () => {
+      const popPath = window.location.pathname.replace(/\/+$/, '') || '/';
+      const popTab = ROUTE_TO_TAB[popPath];
+      if (popTab) {
+        setActiveTab(popTab);
+      } else {
+        window.history.replaceState(null, '', '/');
+        setActiveTab('formatter');
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [user, loading]);
 
   // Dynamic Browser Tab Title Synchronization
   useEffect(() => {
@@ -87,9 +177,7 @@ export default function App() {
       {/* Collapsible Sidebar */}
       <Sidebar
         activeTab={activeTab}
-        setActiveTab={(tab) => {
-          setActiveTab(tab);
-        }}
+        setActiveTab={handleTabChange}
         isCollapsed={isCollapsed}
         setIsCollapsed={setIsCollapsed}
         isMobileOpen={isMobileOpen}
@@ -106,7 +194,7 @@ export default function App() {
         <Header
           activeTab={activeTab}
           onOpenMobileMenu={() => setIsMobileOpen(true)}
-          onNavigateToProfile={() => setActiveTab('profile')}
+          onNavigateToProfile={() => handleTabChange('profile')}
         />
 
         {/* Main Content Area */}
@@ -190,7 +278,7 @@ export default function App() {
             <CustomerIdSearchEditor
               refreshTrigger={historyRefreshKey}
               onDataChange={handleProcessingSuccess}
-              onNavigateToAudit={() => setActiveTab('update_audit')}
+              onNavigateToAudit={() => handleTabChange('update_audit')}
             />
           </div>
 
@@ -200,7 +288,7 @@ export default function App() {
           <div className={activeTab === 'update_audit' ? 'animate-fade-in' : 'hidden'}>
             <CustomerUpdateReportView
               refreshTrigger={historyRefreshKey}
-              onNavigateToEditor={() => setActiveTab('id_editor')}
+              onNavigateToEditor={() => handleTabChange('id_editor')}
             />
           </div>
 
