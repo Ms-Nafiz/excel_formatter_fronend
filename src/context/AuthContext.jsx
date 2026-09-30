@@ -19,20 +19,23 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     const verifyAuth = async () => {
-      if (token) {
+      const savedToken = localStorage.getItem('excel_formatter_token');
+      if (savedToken) {
         try {
           const res = await api.get('/auth/me');
           setUser(res.data.user);
           localStorage.setItem('excel_formatter_user', JSON.stringify(res.data.user));
         } catch (err) {
           console.error("Token verification failed:", err);
-          logout();
+          if (err.response?.status === 401) {
+            logout();
+          }
         }
       }
       setLoading(false);
     };
     verifyAuth();
-  }, [token]);
+  }, []);
 
   const login = async (email, password) => {
     setAuthError(null);
