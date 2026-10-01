@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Lock, Mail, User, ArrowRight, Sparkles, FileSpreadsheet, ShieldCheck, MapPin, Users } from 'lucide-react';
+import { Lock, Mail, User, ArrowRight, Sparkles, FileSpreadsheet, ShieldCheck, MapPin, Users, Database } from 'lucide-react';
 
 export default function LoginPage() {
-  const { login, register, authError } = useAuth();
+  const { login, register, authError, dbStatus, verifyDbConnection } = useAuth();
   const [isLoginTab, setIsLoginTab] = useState(true);
 
   // Sync browser tab title
@@ -85,9 +85,37 @@ export default function LoginPage() {
           </div>
         </div>
 
-        <div className="hidden sm:flex items-center space-x-2 px-3 py-1.5 rounded-full bg-slate-900/80 border border-slate-800 text-xs text-slate-400">
-          <ShieldCheck className="w-4 h-4 text-emerald-400" />
-          <span>Protected Enterprise Workspace</span>
+        <div className="flex items-center space-x-3">
+          {/* Live DB Status Pill */}
+          <button
+            type="button"
+            onClick={verifyDbConnection}
+            title={dbStatus.error ? `Error: ${dbStatus.error}` : 'Live Database Status (Click to test)'}
+            className={`flex items-center space-x-2 px-3 py-1.5 rounded-full border text-xs font-semibold cursor-pointer transition ${
+              dbStatus.checking
+                ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+                : dbStatus.connected
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+            }`}
+          >
+            <Database className="w-3.5 h-3.5" />
+            <span className={`w-2 h-2 rounded-full ${
+              dbStatus.checking ? 'bg-amber-400 animate-ping' : dbStatus.connected ? 'bg-emerald-400' : 'bg-rose-400'
+            }`} />
+            <span>
+              {dbStatus.checking
+                ? 'Checking DB...'
+                : dbStatus.connected
+                ? 'Live DB: Connected'
+                : 'Live DB: Disconnected'}
+            </span>
+          </button>
+
+          <div className="hidden sm:flex items-center space-x-2 px-3 py-1.5 rounded-full bg-slate-900/80 border border-slate-800 text-xs text-slate-400">
+            <ShieldCheck className="w-4 h-4 text-emerald-400" />
+            <span>Protected Enterprise Workspace</span>
+          </div>
         </div>
       </header>
 
