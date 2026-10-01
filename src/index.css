@@ -131,7 +131,7 @@ input[type="number"] {
 /* Multi-Page Print Styles Engine */
 @page {
   size: auto;
-  margin: 8mm 8mm 8mm 8mm;
+  margin: 10mm 12mm 20mm 12mm;
 }
 
 @media print {

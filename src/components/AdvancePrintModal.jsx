@@ -1037,7 +1037,7 @@ export default function AdvancePrintModal({
         </div>
 
         {/* Printable Signature Footer Block */}
-        <div className="mt-12 pt-8 border-t border-slate-300 grid grid-cols-3 gap-6 text-center text-[11px] font-bold text-slate-700">
+        <div className="print-signature-block mt-10 pt-6 border-t border-slate-300 grid grid-cols-3 gap-6 text-center text-[11px] font-bold text-slate-700">
           <div>
             <div className="border-b border-slate-400 w-32 mx-auto mb-2" />
             <span>Prepared By</span>
@@ -1051,6 +1051,9 @@ export default function AdvancePrintModal({
             <span>Supervisor Sign</span>
           </div>
         </div>
+
+        {/* Dedicated Page Bottom Gap for Page Numbers */}
+        <div className="print-footer-gap h-6 print:h-10 w-full" aria-hidden="true" />
       </div>
     );
   };
@@ -1703,6 +1706,21 @@ export default function AdvancePrintModal({
               }
             }
             @media print {
+              @page {
+                size: ${orientation === 'landscape' ? 'landscape' : 'portrait'};
+                margin-top: 10mm;
+                margin-bottom: 20mm; /* Dedicated generous gap for footer page numbers */
+                margin-left: 12mm;  /* Exact equal left margin */
+                margin-right: 12mm; /* Exact equal right margin */
+              }
+              html, body {
+                width: 100% !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                background: #ffffff !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+              }
               body > *:not(#printable-advance-document-portal) {
                 display: none !important;
               }
@@ -1710,18 +1728,35 @@ export default function AdvancePrintModal({
                 display: block !important;
                 position: static !important;
                 width: 100% !important;
+                max-width: 100% !important;
                 height: auto !important;
                 overflow: visible !important;
                 background: #ffffff !important;
                 color: #0f172a !important;
-                margin: 0 !important;
+                margin: 0 auto !important;
                 padding: 0 !important;
+                box-sizing: border-box !important;
+              }
+              #printable-advance-document-portal #printable-advance-document {
+                width: 100% !important;
+                max-width: 100% !important;
+                margin: 0 auto !important;
+                padding: 0 !important;
+                border: none !important;
+                box-shadow: none !important;
+                border-radius: 0 !important;
+                background: transparent !important;
+                box-sizing: border-box !important;
               }
               #printable-advance-document-portal table {
                 display: table !important;
                 width: 100% !important;
+                max-width: 100% !important;
                 border-collapse: collapse !important;
                 page-break-inside: auto !important;
+                margin-left: auto !important;
+                margin-right: auto !important;
+                table-layout: auto !important;
               }
               #printable-advance-document-portal thead {
                 display: table-header-group !important;
@@ -1760,6 +1795,18 @@ export default function AdvancePrintModal({
                 break-inside: auto !important;
                 margin-bottom: 1rem !important;
                 border: 1.5px solid #334155 !important;
+              }
+              #printable-advance-document-portal .print-signature-block {
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+                margin-top: 2rem !important;
+                margin-bottom: 1.5rem !important;
+              }
+              #printable-advance-document-portal .print-footer-gap {
+                display: block !important;
+                height: 12mm !important;
+                width: 100% !important;
+                clear: both !important;
               }
             }
           `}</style>
