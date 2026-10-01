@@ -1,21 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Lock, Mail, User, ArrowRight, Sparkles, FileSpreadsheet, ShieldCheck, MapPin, Users, Database } from 'lucide-react';
+import { Lock, Mail, ArrowRight, Sparkles, FileSpreadsheet, ShieldCheck, MapPin, Users, Database } from 'lucide-react';
 
 export default function LoginPage() {
-  const { login, register, authError, dbStatus, verifyDbConnection } = useAuth();
-  const [isLoginTab, setIsLoginTab] = useState(true);
+  const { login, authError, dbStatus, verifyDbConnection } = useAuth();
 
   // Sync browser tab title
   useEffect(() => {
-    document.title = isLoginTab ? 'Sign In | AutoExcel' : 'Create Account | AutoExcel';
-  }, [isLoginTab]);
+    document.title = 'Sign In | AutoExcel';
+  }, []);
 
   const [formData, setFormData] = useState({
-    name: '',
     email: '',
     password: '',
-    passwordConfirmation: '',
   });
 
   const [loading, setLoading] = useState(false);
@@ -25,37 +22,16 @@ export default function LoginPage() {
   };
 
   const handleQuickDemoFill = () => {
-    if (isLoginTab) {
-      setFormData({
-        name: '',
-        email: 'demo@excel.com',
-        password: 'password123',
-        passwordConfirmation: '',
-      });
-    } else {
-      setFormData({
-        name: 'Excel Demo User',
-        email: `user_${Math.floor(Math.random() * 1000)}@excel.com`,
-        password: 'password123',
-        passwordConfirmation: 'password123',
-      });
-    }
+    setFormData({
+      email: 'demo@excel.com',
+      password: 'password123',
+    });
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
-
-    if (isLoginTab) {
-      await login(formData.email, formData.password);
-    } else {
-      await register(
-        formData.name,
-        formData.email,
-        formData.password,
-        formData.passwordConfirmation
-      );
-    }
+    await login(formData.email, formData.password);
     setLoading(false);
   };
 
@@ -172,33 +148,11 @@ export default function LoginPage() {
                   <Lock className="w-6 h-6" />
                 </div>
                 <h2 className="text-2xl font-bold text-white tracking-tight">
-                  {isLoginTab ? 'Welcome Back' : 'Create Account'}
+                  Welcome Back
                 </h2>
                 <p className="text-xs text-slate-400 mt-1">
-                  Enter your credentials to continue
+                  Enter your credentials to sign in to your workspace
                 </p>
-              </div>
-
-              {/* Tab Switcher */}
-              <div className="flex p-1 bg-slate-900/80 rounded-xl mb-6 border border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setIsLoginTab(true)}
-                  className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all ${
-                    isLoginTab ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  Sign In
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsLoginTab(false)}
-                  className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all ${
-                    !isLoginTab ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  Register
-                </button>
               </div>
 
               {/* Error Alert */}
@@ -223,24 +177,6 @@ export default function LoginPage() {
 
               {/* Form */}
               <form onSubmit={handleSubmit} className="space-y-4">
-                {!isLoginTab && (
-                  <div>
-                    <label className="block text-xs font-medium text-slate-300 mb-1">Full Name</label>
-                    <div className="relative">
-                      <User className="absolute left-3.5 top-3 w-4 h-4 text-slate-500" />
-                      <input
-                        type="text"
-                        name="name"
-                        required
-                        value={formData.name}
-                        onChange={handleChange}
-                        placeholder="John Doe"
-                        className="w-full pl-10 pr-4 py-2.5 bg-slate-900/90 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition"
-                      />
-                    </div>
-                  </div>
-                )}
-
                 <div>
                   <label className="block text-xs font-medium text-slate-300 mb-1">Email Address</label>
                   <div className="relative">
@@ -273,24 +209,6 @@ export default function LoginPage() {
                   </div>
                 </div>
 
-                {!isLoginTab && (
-                  <div>
-                    <label className="block text-xs font-medium text-slate-300 mb-1">Confirm Password</label>
-                    <div className="relative">
-                      <Lock className="absolute left-3.5 top-3 w-4 h-4 text-slate-500" />
-                      <input
-                        type="password"
-                        name="passwordConfirmation"
-                        required
-                        value={formData.passwordConfirmation}
-                        onChange={handleChange}
-                        placeholder="••••••••"
-                        className="w-full pl-10 pr-4 py-2.5 bg-slate-900/90 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition"
-                      />
-                    </div>
-                  </div>
-                )}
-
                 <button
                   type="submit"
                   disabled={loading}
@@ -299,16 +217,24 @@ export default function LoginPage() {
                   {loading ? (
                     <span className="flex items-center space-x-2">
                       <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      <span>Processing...</span>
+                      <span>Signing in...</span>
                     </span>
                   ) : (
                     <>
-                      <span>{isLoginTab ? 'Sign In to Workspace' : 'Create New Account'}</span>
+                      <span>Sign In to Workspace</span>
                       <ArrowRight className="w-4 h-4" />
                     </>
                   )}
                 </button>
               </form>
+
+              {/* Admin Provisioning Notice */}
+              <div className="mt-6 pt-4 border-t border-slate-800/80 text-center">
+                <p className="text-[11px] text-slate-500 flex items-center justify-center space-x-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-slate-500" />
+                  <span>New user accounts are created and managed by System Administrators only.</span>
+                </p>
+              </div>
 
             </div>
           </div>

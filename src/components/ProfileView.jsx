@@ -20,7 +20,10 @@ import {
   Sparkles,
   ArrowRight,
   Eye,
-  EyeOff
+  EyeOff,
+  UserPlus,
+  Trash2,
+  X
 } from 'lucide-react';
 
 export default function ProfileView() {
@@ -42,11 +45,23 @@ export default function ProfileView() {
   const [passwordMsg, setPasswordMsg] = useState(null);
   const [passwordError, setPasswordError] = useState(null);
 
-  // Admin: All Users List
+  // Admin: All Users List & Management
   const [allUsers, setAllUsers] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [updatingUserId, setUpdatingUserId] = useState(null);
   const [userRoleMsg, setUserRoleMsg] = useState(null);
+
+  // Admin: Add New User Modal State
+  const [showAddUserModal, setShowAddUserModal] = useState(false);
+  const [newUserData, setNewUserData] = useState({
+    name: '',
+    email: '',
+    password: '',
+    role: 'user',
+  });
+  const [creatingUser, setCreatingUser] = useState(false);
+  const [createUserError, setCreateUserError] = useState(null);
+  const [deletingUserId, setDeletingUserId] = useState(null);
 
   useEffect(() => {
     if (user) {
@@ -160,6 +175,63 @@ export default function ProfileView() {
       alert(err.response?.data?.message || 'Failed to update user role.');
     } finally {
       setUpdatingUserId(null);
+    }
+  };
+
+  // Admin: Create New User
+  const handleCreateUser = async (e) => {
+    e.preventDefault();
+    setCreatingUser(true);
+    setCreateUserError(null);
+
+    if (newUserData.password.length < 6) {
+      setCreateUserError('Password must be at least 6 characters long.');
+      setCreatingUser(false);
+      return;
+    }
+
+    try {
+      const res = await api.post('/auth/users', {
+        name: newUserData.name.trim(),
+        email: newUserData.email.trim(),
+        password: newUserData.password,
+        role: newUserData.role,
+      });
+
+      setUserRoleMsg(res.data?.message || `User '${newUserData.name}' created successfully!`);
+      setShowAddUserModal(false);
+      setNewUserData({ name: '', email: '', password: '', role: 'user' });
+      fetchAllUsers();
+      setTimeout(() => setUserRoleMsg(null), 5000);
+    } catch (err) {
+      const msg = err.response?.data?.message || (err.response?.data?.errors ? Object.values(err.response.data.errors).flat().join(', ') : 'Failed to create user account.');
+      setCreateUserError(msg);
+    } finally {
+      setCreatingUser(false);
+    }
+  };
+
+  // Admin: Delete User
+  const handleDeleteUser = async (targetUser) => {
+    if (targetUser.id === user.id) {
+      alert('You cannot delete your own logged-in admin account.');
+      return;
+    }
+
+    if (!window.confirm(`Are you sure you want to permanently delete user "${targetUser.name}" (${targetUser.email})?`)) {
+      return;
+    }
+
+    setDeletingUserId(targetUser.id);
+    try {
+      const res = await api.delete(`/auth/users/${targetUser.id}`);
+      setUserRoleMsg(res.data?.message || 'User deleted successfully.');
+      setAllUsers((prev) => prev.filter((u) => u.id !== targetUser.id));
+      setTimeout(() => setUserRoleMsg(null), 4000);
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to delete user.');
+    } finally {
+      setDeletingUserId(null);
     }
   };
 
@@ -505,14 +577,29 @@ export default function ProfileView() {
               </div>
             </div>
 
-            <button
-              onClick={fetchAllUsers}
-              disabled={loadingUsers}
-              className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold border border-slate-700 flex items-center space-x-1.5 transition cursor-pointer self-start sm:self-auto"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${loadingUsers ? 'animate-spin' : ''}`} />
-              <span>Refresh Users</span>
-            </button>
+            <div className="flex items-center space-x-2.5 self-start sm:self-auto">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAddUserModal(true);
+                  setCreateUserError(null);
+                }}
+                className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 text-xs font-bold shadow-lg shadow-amber-500/20 flex items-center space-x-1.5 transition cursor-pointer"
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                <span>Add New User</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={fetchAllUsers}
+                disabled={loadingUsers}
+                className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold border border-slate-700 flex items-center space-x-1.5 transition cursor-pointer"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${loadingUsers ? 'animate-spin' : ''}`} />
+                <span>Refresh</span>
+              </button>
+            </div>
           </div>
 
           {userRoleMsg && (
@@ -537,7 +624,7 @@ export default function ProfileView() {
                     <th className="py-3 px-4">Files Processed</th>
                     <th className="py-3 px-4">Registered Date</th>
                     <th className="py-3 px-4">Current Role</th>
-                    <th className="py-3 px-4 text-right">Assign Role</th>
+                    <th className="py-3 px-4 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60 bg-slate-900/30">
@@ -575,16 +662,30 @@ export default function ProfileView() {
                       </td>
 
                       <td className="py-3 px-4 text-right">
-                        <select
-                          value={u.role || 'user'}
-                          disabled={updatingUserId === u.id}
-                          onChange={(e) => handleRoleChange(u.id, e.target.value)}
-                          className="bg-slate-900 border border-slate-700 text-white rounded-lg px-2.5 py-1 text-xs font-semibold focus:outline-none focus:border-amber-500 cursor-pointer disabled:opacity-50"
-                        >
-                          <option value="user">User</option>
-                          <option value="authority">Authority</option>
-                          <option value="admin">Admin</option>
-                        </select>
+                        <div className="flex items-center justify-end space-x-2">
+                          <select
+                            value={u.role || 'user'}
+                            disabled={updatingUserId === u.id}
+                            onChange={(e) => handleRoleChange(u.id, e.target.value)}
+                            className="bg-slate-900 border border-slate-700 text-white rounded-lg px-2.5 py-1 text-xs font-semibold focus:outline-none focus:border-amber-500 cursor-pointer disabled:opacity-50"
+                          >
+                            <option value="user">User</option>
+                            <option value="authority">Authority</option>
+                            <option value="admin">Admin</option>
+                          </select>
+
+                          {u.id !== user.id && (
+                            <button
+                              type="button"
+                              disabled={deletingUserId === u.id}
+                              onClick={() => handleDeleteUser(u)}
+                              title={`Remove ${u.name}`}
+                              className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/25 border border-rose-500/20 text-rose-400 hover:text-rose-300 transition cursor-pointer disabled:opacity-50"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -593,6 +694,131 @@ export default function ProfileView() {
             </div>
           )}
 
+        </div>
+      )}
+
+      {/* 5. Admin Modal: Add New User */}
+      {showAddUserModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
+          <div className="glass-card w-full max-w-md rounded-3xl p-6 sm:p-7 border border-amber-500/40 shadow-2xl relative bg-slate-900">
+            
+            <div className="flex items-center justify-between pb-4 border-b border-slate-800">
+              <div className="flex items-center space-x-3">
+                <div className="p-2.5 rounded-2xl bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                  <UserPlus className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">Create New User</h3>
+                  <p className="text-xs text-slate-400">Add a new authorized account to the workspace</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAddUserModal(false)}
+                className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {createUserError && (
+              <div className="mt-4 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center space-x-2">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                <span>{createUserError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleCreateUser} className="mt-5 space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">Full Name</label>
+                <div className="relative">
+                  <User className="absolute left-3.5 top-3 w-4 h-4 text-slate-500" />
+                  <input
+                    type="text"
+                    required
+                    value={newUserData.name}
+                    onChange={(e) => setNewUserData({ ...newUserData, name: e.target.value })}
+                    placeholder="e.g. Rafiqul Islam"
+                    className="w-full pl-10 pr-4 py-2.5 bg-slate-950/80 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 transition"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">Email Address</label>
+                <div className="relative">
+                  <Mail className="absolute left-3.5 top-3 w-4 h-4 text-slate-500" />
+                  <input
+                    type="email"
+                    required
+                    value={newUserData.email}
+                    onChange={(e) => setNewUserData({ ...newUserData, email: e.target.value })}
+                    placeholder="user@cclcatv.com"
+                    className="w-full pl-10 pr-4 py-2.5 bg-slate-950/80 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 transition"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">Initial Password (min 6 characters)</label>
+                <div className="relative">
+                  <Lock className="absolute left-3.5 top-3 w-4 h-4 text-slate-500" />
+                  <input
+                    type="password"
+                    required
+                    value={newUserData.password}
+                    onChange={(e) => setNewUserData({ ...newUserData, password: e.target.value })}
+                    placeholder="••••••••"
+                    className="w-full pl-10 pr-4 py-2.5 bg-slate-950/80 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 transition"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">Role Permission</label>
+                <div className="relative">
+                  <Shield className="absolute left-3.5 top-3 w-4 h-4 text-slate-500" />
+                  <select
+                    value={newUserData.role}
+                    onChange={(e) => setNewUserData({ ...newUserData, role: e.target.value })}
+                    className="w-full pl-10 pr-4 py-2.5 bg-slate-950/80 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-amber-500 cursor-pointer transition"
+                  >
+                    <option value="user">User (Standard Workspace Access)</option>
+                    <option value="authority">Authority (Management Access)</option>
+                    <option value="admin">Admin (Full Administrative Access)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="pt-2 flex items-center space-x-3">
+                <button
+                  type="button"
+                  onClick={() => setShowAddUserModal(false)}
+                  className="flex-1 py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={creatingUser}
+                  className="flex-1 py-2.5 px-4 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 text-xs font-bold rounded-xl shadow-lg shadow-amber-500/25 transition cursor-pointer disabled:opacity-50 flex items-center justify-center space-x-2"
+                >
+                  {creatingUser ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Creating User...</span>
+                    </>
+                  ) : (
+                    <>
+                      <UserPlus className="w-3.5 h-3.5" />
+                      <span>Create Account</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+
+          </div>
         </div>
       )}
 
