@@ -2,6 +2,51 @@ import React, { useState, useRef } from 'react';
 import api from '../services/api';
 import { UploadCloud, FileSpreadsheet, CheckCircle, AlertTriangle, Download, RefreshCw, Sliders, Play, ArrowUpDown, Plus, Trash2, ArrowUp, ArrowDown, Calendar } from 'lucide-react';
 
+const monthNames = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'
+];
+
+// Automatically get real calendar current month & year (e.g. "October 2026")
+const getCurrentCalendarMonth = () => {
+  const now = new Date();
+  return `${monthNames[now.getMonth()]} ${now.getFullYear()}`;
+};
+
+// Generate rolling list of months (2 months ahead down to 14 months past)
+const getDynamicMonthOptions = () => {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const options = [];
+
+  for (let offset = 2; offset >= -14; offset--) {
+    const d = new Date(currentYear, now.getMonth() + offset, 1);
+    const mStr = `${monthNames[d.getMonth()]} ${d.getFullYear()}`;
+    if (!options.includes(mStr)) {
+      options.push(mStr);
+    }
+  }
+  return options;
+};
+
+// Try to auto-detect month from uploaded filename (e.g. "Bill_October_2026.xlsx" -> "October 2026")
+const detectMonthFromFileName = (fileName) => {
+  if (!fileName) return null;
+  const lower = fileName.toLowerCase();
+  for (let idx = 0; idx < monthNames.length; idx++) {
+    const m = monthNames[idx];
+    const mLower = m.toLowerCase();
+    const shortM = mLower.substring(0, 3);
+    const regex = new RegExp(`\\b(${mLower}|${shortM})\\b`, 'i');
+    if (regex.test(lower)) {
+      const yearMatch = fileName.match(/\b(202[0-9]|203[0-9])\b/);
+      const year = yearMatch ? parseInt(yearMatch[1], 10) : new Date().getFullYear();
+      return `${m} ${year}`;
+    }
+  }
+  return null;
+};
+
 export default function FileUpload({ onProcessingSuccess, onOpenAuth, isAuthenticated }) {
   const [file, setFile] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -9,7 +54,10 @@ export default function FileUpload({ onProcessingSuccess, onOpenAuth, isAuthenti
   const [progressStep, setProgressStep] = useState('');
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
-  const [billingMonth, setBillingMonth] = useState('August 2026');
+  
+  const currentCalendarMonth = getCurrentCalendarMonth();
+  const [billingMonth, setBillingMonth] = useState(currentCalendarMonth);
+  const [monthOptions, setMonthOptions] = useState(getDynamicMonthOptions);
 
   // Advanced Sorting Rules State (Default: Area Name -> Building Name -> House No -> Flat No)
   const [showSortCustomizer, setShowSortCustomizer] = useState(false);
@@ -58,6 +106,13 @@ export default function FileUpload({ onProcessingSuccess, onOpenAuth, isAuthenti
       }
       setError(null);
       setFile(selectedFile);
+
+      // Auto-detect month from file name if filename mentions a month (e.g. "bill_september_2026.xlsx")
+      const detectedMonth = detectMonthFromFileName(selectedFile.name);
+      if (detectedMonth) {
+        setBillingMonth(detectedMonth);
+        setMonthOptions((prev) => prev.includes(detectedMonth) ? prev : [detectedMonth, ...prev]);
+      }
     }
   };
 
@@ -156,25 +211,29 @@ export default function FileUpload({ onProcessingSuccess, onOpenAuth, isAuthenti
             <span>Target Billing Month & Year Tracker:</span>
           </div>
 
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2.5">
             <select
               value={billingMonth}
               onChange={(e) => setBillingMonth(e.target.value)}
               className="py-1.5 px-3 bg-slate-950 border border-slate-700 hover:border-indigo-500 rounded-lg text-xs font-bold text-white focus:outline-none focus:border-indigo-500 transition cursor-pointer"
             >
-              <option value="August 2026">August 2026 (Current Month)</option>
-              <option value="July 2026">July 2026</option>
-              <option value="June 2026">June 2026</option>
-              <option value="May 2026">May 2026</option>
-              <option value="April 2026">April 2026</option>
-              <option value="March 2026">March 2026</option>
-              <option value="February 2026">February 2026</option>
-              <option value="January 2026">January 2026</option>
-              <option value="September 2026">September 2026</option>
-              <option value="October 2026">October 2026</option>
-              <option value="November 2026">November 2026</option>
-              <option value="December 2026">December 2026</option>
+              {monthOptions.map((m) => (
+                <option key={m} value={m}>
+                  {m} {m === currentCalendarMonth ? '(Current Month)' : ''}
+                </option>
+              ))}
             </select>
+
+            {billingMonth !== currentCalendarMonth && (
+              <button
+                type="button"
+                onClick={() => setBillingMonth(currentCalendarMonth)}
+                className="text-[11px] text-indigo-400 hover:text-indigo-300 font-semibold underline cursor-pointer"
+                title="Reset to current calendar month"
+              >
+                Set Current
+              </button>
+            )}
           </div>
         </div>
 

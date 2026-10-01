@@ -131,7 +131,7 @@ export default function CustomerSummaryModal({ fileRecord, onClose }) {
                 </span>
                 <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/20 text-[10px] font-bold print:border-slate-400 print:text-slate-800">
                   <Calendar className="w-3 h-3 text-amber-400 no-print" />
-                  <span>{fileRecord.billing_month || 'August 2026'}</span>
+                  <span>{fileRecord.billing_month || 'N/A'}</span>
                 </span>
               </div>
             </div>

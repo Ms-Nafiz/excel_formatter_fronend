@@ -96,7 +96,7 @@ export default function FileHistory({ refreshTrigger, isAuthenticated, onOpenAut
       } else {
         cleanName = cleanName.replace(/[^a-zA-Z0-9_\-]/g, '_').replace(/_+/g, '_');
       }
-      const monthStr = (item.billing_month || 'August 2026').replace(/[^a-zA-Z0-9_\-]/g, '_');
+      const monthStr = (item.billing_month || 'Report').replace(/[^a-zA-Z0-9_\-]/g, '_');
       const downloadFileName = `Formatted_${cleanName}_${monthStr}.xlsx`;
 
       const link = document.createElement('a');
@@ -352,7 +352,7 @@ export default function FileHistory({ refreshTrigger, isAuthenticated, onOpenAut
                     <td className="py-3.5 px-4">
                       <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/20 text-[11px] font-bold">
                         <Calendar className="w-3 h-3 text-amber-400 flex-shrink-0" />
-                        <span>{item.billing_month || 'August 2026'}</span>
+                        <span>{item.billing_month || 'N/A'}</span>
                       </span>
                     </td>
 
@@ -549,7 +549,7 @@ export default function FileHistory({ refreshTrigger, isAuthenticated, onOpenAut
                         <td className="py-3 px-3">
                           <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/20 text-[10px] font-bold">
                             <Calendar className="w-3 h-3 text-amber-400" />
-                            <span>{item.billing_month || 'August 2026'}</span>
+                            <span>{item.billing_month || 'N/A'}</span>
                           </span>
                         </td>
 

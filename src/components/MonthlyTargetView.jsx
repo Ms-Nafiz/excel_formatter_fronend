@@ -29,8 +29,17 @@ import {
 // In-memory cache store so target report data persists across tab switches & month changes
 const targetReportCache = {};
 
+const defaultMonthNames = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'
+];
+const getCurrentCalendarMonth = () => {
+  const now = new Date();
+  return `${defaultMonthNames[now.getMonth()]} ${now.getFullYear()}`;
+};
+
 export default function MonthlyTargetView({ refreshTrigger }) {
-  const [selectedMonth, setSelectedMonth] = useState('August 2026');
+  const [selectedMonth, setSelectedMonth] = useState(getCurrentCalendarMonth);
   const [availableMonths, setAvailableMonths] = useState([]);
   const [activeDataMonths, setActiveDataMonths] = useState([]);
   const [loading, setLoading] = useState(false);
