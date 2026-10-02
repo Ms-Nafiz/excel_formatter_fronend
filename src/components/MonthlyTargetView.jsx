@@ -53,6 +53,7 @@ export default function MonthlyTargetView({ refreshTrigger }) {
   const [selectedCollector, setSelectedCollector] = useState('ALL');
   const [selectedType, setSelectedType] = useState('ALL'); // 'ALL' | 'Analog' | 'Digital'
   const [searchQuery, setSearchQuery] = useState('');
+  const [isTargetOnly, setIsTargetOnly] = useState(false); // Target Only Checkmark Toggle
 
   // Previous month comparison states
   const [customCompareMonth, setCustomCompareMonth] = useState('');
@@ -467,173 +468,231 @@ export default function MonthlyTargetView({ refreshTrigger }) {
       rows.push([title]);
       rows.push([]); // blank row
 
-      if (viewMode === 'type_collector') {
-        rows.push(['Type', 'Collector', 'Customer', 'Rent', 'Due', 'Advnc', 'Actual Bill', '50%', 'Target']);
-        if (filteredAnalogList.length > 0) {
-          rows.push(['Analog', '', '', '', '', '', '', '', '']);
-          filteredAnalogList.forEach((item) => {
-            rows.push([
-              '',
-              item.collector_name,
-              item.count_of_id,
-              item.sum_of_rent,
-              item.sum_of_due,
-              item.sum_of_advnc,
-              item.sum_of_actual_bill,
-              item.sum_of_50,
-              item.sum_of_target,
-            ]);
+      if (isTargetOnly) {
+        // TARGET ONLY EXPORT
+        if (viewMode === 'type_collector') {
+          rows.push(['Type', 'Collector', 'Target']);
+          if (selectedType === 'ALL' || selectedType === 'Analog') {
+            if (filteredAnalogList.length > 0) {
+              rows.push(['Analog', '', '']);
+              filteredAnalogList.forEach((item) => {
+                rows.push(['', item.collector_name, item.sum_of_target]);
+              });
+              rows.push(['Analog Total', '', analogTotalTarget]);
+            }
+          }
+          if (selectedType === 'ALL' || selectedType === 'Digital') {
+            if (filteredDigitalList.length > 0) {
+              rows.push(['Digital', '', '']);
+              filteredDigitalList.forEach((item) => {
+                rows.push(['', item.collector_name, item.sum_of_target]);
+              });
+              rows.push(['Digital Total', '', digitalTotalTarget]);
+            }
+          }
+          rows.push(['Grand Total', '', grandTarget]);
+        } else if (viewMode === 'collector_wise') {
+          rows.push(['Collector', 'Target']);
+          filteredCollectorWiseList.forEach((item) => {
+            rows.push([item.collector_name, item.sum_of_target]);
           });
-          rows.push([
-            'Analog Total',
-            '',
-            analogTotalCount,
-            analogTotalRent,
-            analogTotalDue,
-            analogTotalAdv,
-            analogTotalActual,
-            analogTotalFifty,
-            analogTotalTarget,
-          ]);
-        }
-        if (filteredDigitalList.length > 0) {
-          rows.push(['Digital', '', '', '', '', '', '', '', '']);
-          filteredDigitalList.forEach((item) => {
-            rows.push([
-              '',
-              item.collector_name,
-              item.count_of_id,
-              item.sum_of_rent,
-              item.sum_of_due,
-              item.sum_of_advnc,
-              item.sum_of_actual_bill,
-              item.sum_of_50,
-              item.sum_of_target,
-            ]);
+          rows.push(['Grand Total', grandTarget]);
+        } else if (viewMode === 'collector_type') {
+          rows.push(['Collector', 'Type', 'Target']);
+          filteredCollectorTypeList.forEach((cItem) => {
+            const hasAnalog = cItem.analog && (selectedType === 'ALL' || selectedType === 'Analog');
+            const hasDigital = cItem.digital && (selectedType === 'ALL' || selectedType === 'Digital');
+            if (hasAnalog) {
+              rows.push([cItem.collector_name, 'Analog', cItem.analog.sum_of_target]);
+            }
+            if (hasDigital) {
+              rows.push([hasAnalog ? '' : cItem.collector_name, 'Digital', cItem.digital.sum_of_target]);
+            }
+            if (hasAnalog && hasDigital) {
+              rows.push([`${cItem.collector_name} Total`, 'Total', cItem.sum_of_target]);
+            }
           });
-          rows.push([
-            'Digital Total',
-            '',
-            digitalTotalCount,
-            digitalTotalRent,
-            digitalTotalDue,
-            digitalTotalAdv,
-            digitalTotalActual,
-            digitalTotalFifty,
-            digitalTotalTarget,
-          ]);
-        }
-      } else if (viewMode === 'collector_wise') {
-        rows.push(['Collector', 'Customer', 'Rent', 'Due', 'Advnc', 'Actual Bill', '50%', 'Target']);
-        filteredCollectorWiseList.forEach((item) => {
-          rows.push([
-            item.collector_name,
-            item.count_of_id,
-            item.sum_of_rent,
-            item.sum_of_due,
-            item.sum_of_advnc,
-            item.sum_of_actual_bill,
-            item.sum_of_50,
-            item.sum_of_target,
-          ]);
-        });
-      } else if (viewMode === 'collector_type') {
-        rows.push(['Collector', 'Type', 'Customer', 'Rent', 'Due', 'Advnc', 'Actual Bill', '50%', 'Target']);
-        filteredCollectorTypeList.forEach((cItem) => {
-          const hasAnalog = cItem.analog && (selectedType === 'ALL' || selectedType === 'Analog');
-          const hasDigital = cItem.digital && (selectedType === 'ALL' || selectedType === 'Digital');
-          if (hasAnalog) {
-            rows.push([
-              cItem.collector_name,
-              'Analog',
-              cItem.analog.count_of_id,
-              cItem.analog.sum_of_rent,
-              cItem.analog.sum_of_due,
-              cItem.analog.sum_of_advnc,
-              cItem.analog.sum_of_actual_bill,
-              cItem.analog.sum_of_50,
-              cItem.analog.sum_of_target,
-            ]);
+          rows.push(['Grand Total', '', grandTarget]);
+        } else if (viewMode === 'type_wise') {
+          rows.push(['Type', 'Target']);
+          if (selectedType === 'ALL' || selectedType === 'Analog') {
+            rows.push(['Analog', analogTotalTarget]);
           }
-          if (hasDigital) {
-            rows.push([
-              hasAnalog ? '' : cItem.collector_name,
-              'Digital',
-              cItem.digital.count_of_id,
-              cItem.digital.sum_of_rent,
-              cItem.digital.sum_of_due,
-              cItem.digital.sum_of_advnc,
-              cItem.digital.sum_of_actual_bill,
-              cItem.digital.sum_of_50,
-              cItem.digital.sum_of_target,
-            ]);
+          if (selectedType === 'ALL' || selectedType === 'Digital') {
+            rows.push(['Digital', digitalTotalTarget]);
           }
-          if (hasAnalog && hasDigital) {
-            rows.push([
-              `${cItem.collector_name} Total`,
-              'Total',
-              cItem.count_of_id,
-              cItem.sum_of_rent,
-              cItem.sum_of_due,
-              cItem.sum_of_advnc,
-              cItem.sum_of_actual_bill,
-              cItem.sum_of_50,
-              cItem.sum_of_target,
-            ]);
-          }
-        });
-      } else if (viewMode === 'type_wise') {
-        rows.push(['Type', 'Customer', 'Rent', 'Due', 'Advnc', 'Actual Bill', '50%', 'Target']);
-        if (selectedType === 'ALL' || selectedType === 'Analog') {
-          rows.push([
-            'Analog',
-            analogTotalCount,
-            analogTotalRent,
-            analogTotalDue,
-            analogTotalAdv,
-            analogTotalActual,
-            analogTotalFifty,
-            analogTotalTarget,
-          ]);
+          rows.push(['Grand Total', grandTarget]);
         }
-        if (selectedType === 'ALL' || selectedType === 'Digital') {
-          rows.push([
-            'Digital',
-            digitalTotalCount,
-            digitalTotalRent,
-            digitalTotalDue,
-            digitalTotalAdv,
-            digitalTotalActual,
-            digitalTotalFifty,
-            digitalTotalTarget,
-          ]);
-        }
-      }
-
-      // Append Grand Total Row
-      if (viewMode === 'type_collector' || viewMode === 'collector_type') {
-        rows.push([
-          'Grand Total',
-          '',
-          grandCount,
-          grandRent,
-          grandDue,
-          grandAdv,
-          grandActual,
-          grandFifty,
-          grandTarget,
-        ]);
       } else {
-        rows.push([
-          'Grand Total',
-          grandCount,
-          grandRent,
-          grandDue,
-          grandAdv,
-          grandActual,
-          grandFifty,
-          grandTarget,
-        ]);
+        // STANDARD COMPLETE 9-COLUMN EXPORT
+        if (viewMode === 'type_collector') {
+          rows.push(['Type', 'Collector', 'Customer', 'Rent', 'Due', 'Advnc', 'Actual Bill', '50%', 'Target']);
+          if (filteredAnalogList.length > 0) {
+            rows.push(['Analog', '', '', '', '', '', '', '', '']);
+            filteredAnalogList.forEach((item) => {
+              rows.push([
+                '',
+                item.collector_name,
+                item.count_of_id,
+                item.sum_of_rent,
+                item.sum_of_due,
+                item.sum_of_advnc,
+                item.sum_of_actual_bill,
+                item.sum_of_50,
+                item.sum_of_target,
+              ]);
+            });
+            rows.push([
+              'Analog Total',
+              '',
+              analogTotalCount,
+              analogTotalRent,
+              analogTotalDue,
+              analogTotalAdv,
+              analogTotalActual,
+              analogTotalFifty,
+              analogTotalTarget,
+            ]);
+          }
+          if (filteredDigitalList.length > 0) {
+            rows.push(['Digital', '', '', '', '', '', '', '', '']);
+            filteredDigitalList.forEach((item) => {
+              rows.push([
+                '',
+                item.collector_name,
+                item.count_of_id,
+                item.sum_of_rent,
+                item.sum_of_due,
+                item.sum_of_advnc,
+                item.sum_of_actual_bill,
+                item.sum_of_50,
+                item.sum_of_target,
+              ]);
+            });
+            rows.push([
+              'Digital Total',
+              '',
+              digitalTotalCount,
+              digitalTotalRent,
+              digitalTotalDue,
+              digitalTotalAdv,
+              digitalTotalActual,
+              digitalTotalFifty,
+              digitalTotalTarget,
+            ]);
+          }
+        } else if (viewMode === 'collector_wise') {
+          rows.push(['Collector', 'Customer', 'Rent', 'Due', 'Advnc', 'Actual Bill', '50%', 'Target']);
+          filteredCollectorWiseList.forEach((item) => {
+            rows.push([
+              item.collector_name,
+              item.count_of_id,
+              item.sum_of_rent,
+              item.sum_of_due,
+              item.sum_of_advnc,
+              item.sum_of_actual_bill,
+              item.sum_of_50,
+              item.sum_of_target,
+            ]);
+          });
+        } else if (viewMode === 'collector_type') {
+          rows.push(['Collector', 'Type', 'Customer', 'Rent', 'Due', 'Advnc', 'Actual Bill', '50%', 'Target']);
+          filteredCollectorTypeList.forEach((cItem) => {
+            const hasAnalog = cItem.analog && (selectedType === 'ALL' || selectedType === 'Analog');
+            const hasDigital = cItem.digital && (selectedType === 'ALL' || selectedType === 'Digital');
+            if (hasAnalog) {
+              rows.push([
+                cItem.collector_name,
+                'Analog',
+                cItem.analog.count_of_id,
+                cItem.analog.sum_of_rent,
+                cItem.analog.sum_of_due,
+                cItem.analog.sum_of_advnc,
+                cItem.analog.sum_of_actual_bill,
+                cItem.analog.sum_of_50,
+                cItem.analog.sum_of_target,
+              ]);
+            }
+            if (hasDigital) {
+              rows.push([
+                hasAnalog ? '' : cItem.collector_name,
+                'Digital',
+                cItem.digital.count_of_id,
+                cItem.digital.sum_of_rent,
+                cItem.digital.sum_of_due,
+                cItem.digital.sum_of_advnc,
+                cItem.digital.sum_of_actual_bill,
+                cItem.digital.sum_of_50,
+                cItem.digital.sum_of_target,
+              ]);
+            }
+            if (hasAnalog && hasDigital) {
+              rows.push([
+                `${cItem.collector_name} Total`,
+                'Total',
+                cItem.count_of_id,
+                cItem.sum_of_rent,
+                cItem.sum_of_due,
+                cItem.sum_of_advnc,
+                cItem.sum_of_actual_bill,
+                cItem.sum_of_50,
+                cItem.sum_of_target,
+              ]);
+            }
+          });
+        } else if (viewMode === 'type_wise') {
+          rows.push(['Type', 'Customer', 'Rent', 'Due', 'Advnc', 'Actual Bill', '50%', 'Target']);
+          if (selectedType === 'ALL' || selectedType === 'Analog') {
+            rows.push([
+              'Analog',
+              analogTotalCount,
+              analogTotalRent,
+              analogTotalDue,
+              analogTotalAdv,
+              analogTotalActual,
+              analogTotalFifty,
+              analogTotalTarget,
+            ]);
+          }
+          if (selectedType === 'ALL' || selectedType === 'Digital') {
+            rows.push([
+              'Digital',
+              digitalTotalCount,
+              digitalTotalRent,
+              digitalTotalDue,
+              digitalTotalAdv,
+              digitalTotalActual,
+              digitalTotalFifty,
+              digitalTotalTarget,
+            ]);
+          }
+        }
+
+        // Append Grand Total Row
+        if (viewMode === 'type_collector' || viewMode === 'collector_type') {
+          rows.push([
+            'Grand Total',
+            '',
+            grandCount,
+            grandRent,
+            grandDue,
+            grandAdv,
+            grandActual,
+            grandFifty,
+            grandTarget,
+          ]);
+        } else {
+          rows.push([
+            'Grand Total',
+            grandCount,
+            grandRent,
+            grandDue,
+            grandAdv,
+            grandActual,
+            grandFifty,
+            grandTarget,
+          ]);
+        }
       }
 
       const ws = XLSX.utils.aoa_to_sheet(rows);
@@ -824,6 +883,25 @@ export default function MonthlyTargetView({ refreshTrigger }) {
               {viewMode === 'type_wise' && <Check className="w-3.5 h-3.5 ml-0.5" />}
             </button>
           </div>
+
+          {/* Target Only Checkmark Toggle */}
+          <label
+            className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer select-none border shrink-0 ${
+              isTargetOnly
+                ? 'bg-amber-500/20 text-amber-300 border-amber-500 shadow-md shadow-amber-500/20'
+                : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white hover:border-slate-700'
+            }`}
+            title="Check this to hide Customer, Rent, Due, Advnc, Actual Bill, 50% and show ONLY Target across any view mode"
+          >
+            <input
+              type="checkbox"
+              checked={isTargetOnly}
+              onChange={(e) => setIsTargetOnly(e.target.checked)}
+              className="w-4 h-4 rounded text-amber-500 focus:ring-amber-500 bg-slate-950 border-slate-700 cursor-pointer accent-amber-500"
+            />
+            <Target className={`w-3.5 h-3.5 ${isTargetOnly ? 'text-amber-400' : 'text-slate-500'}`} />
+            <span>Target Only</span>
+          </label>
         </div>
 
         {/* 2. Secondary Custom Filters Bar (Collector, Type, Search & Reset) */}
@@ -1381,12 +1459,16 @@ export default function MonthlyTargetView({ refreshTrigger }) {
                   <tr className="bg-slate-950 border-b border-slate-800 text-slate-300 font-bold text-[11px]">
                     <th className="py-2.5 px-3 border-r border-slate-800">Type</th>
                     <th className="py-2.5 px-3 border-r border-slate-800">Collector</th>
-                    <th className="py-2.5 px-3 border-r border-slate-800 text-right">Customer</th>
-                    <th className="py-2.5 px-3 border-r border-slate-800 text-right">Rent</th>
-                    <th className="py-2.5 px-3 border-r border-slate-800 text-right">Due</th>
-                    <th className="py-2.5 px-3 border-r border-slate-800 text-right">Advnc</th>
-                    <th className="py-2.5 px-3 border-r border-slate-800 text-right">Actual Bill</th>
-                    <th className="py-2.5 px-3 border-r border-slate-800 text-right">50%</th>
+                    {!isTargetOnly && (
+                      <>
+                        <th className="py-2.5 px-3 border-r border-slate-800 text-right">Customer</th>
+                        <th className="py-2.5 px-3 border-r border-slate-800 text-right">Rent</th>
+                        <th className="py-2.5 px-3 border-r border-slate-800 text-right">Due</th>
+                        <th className="py-2.5 px-3 border-r border-slate-800 text-right">Advnc</th>
+                        <th className="py-2.5 px-3 border-r border-slate-800 text-right">Actual Bill</th>
+                        <th className="py-2.5 px-3 border-r border-slate-800 text-right">50%</th>
+                      </>
+                    )}
                     <th className="py-2.5 px-3 text-right">Target</th>
                   </tr>
                 </thead>
@@ -1400,7 +1482,7 @@ export default function MonthlyTargetView({ refreshTrigger }) {
                           <td className="py-3 px-3 border-r border-slate-800 text-center align-middle font-black text-indigo-300 bg-slate-900/40 text-xs sm:text-sm tracking-wide">
                             Analog
                           </td>
-                          <td colSpan={8} className="py-3 px-3 text-slate-400 italic text-center">
+                          <td colSpan={isTargetOnly ? 2 : 8} className="py-3 px-3 text-slate-400 italic text-center">
                             No Analog records match the selected filter
                           </td>
                         </tr>
@@ -1416,12 +1498,16 @@ export default function MonthlyTargetView({ refreshTrigger }) {
                               </td>
                             )}
                             <td className="py-1.5 px-3 border-r border-slate-800 font-semibold text-white">{item.collector_name}</td>
-                            <td className="py-1.5 px-3 border-r border-slate-800 text-right">{fmtNum(item.count_of_id)}</td>
-                            <td className="py-1.5 px-3 border-r border-slate-800 text-right">{fmtNum(item.sum_of_rent)}</td>
-                            <td className="py-1.5 px-3 border-r border-slate-800 text-right">{fmtNum(item.sum_of_due)}</td>
-                            <td className="py-1.5 px-3 border-r border-slate-800 text-right">{fmtNum(item.sum_of_advnc)}</td>
-                            <td className="py-1.5 px-3 border-r border-slate-800 text-right">{fmtNum(item.sum_of_actual_bill)}</td>
-                            <td className="py-1.5 px-3 border-r border-slate-800 text-right">{fmtNum(item.sum_of_50)}</td>
+                            {!isTargetOnly && (
+                              <>
+                                <td className="py-1.5 px-3 border-r border-slate-800 text-right">{fmtNum(item.count_of_id)}</td>
+                                <td className="py-1.5 px-3 border-r border-slate-800 text-right">{fmtNum(item.sum_of_rent)}</td>
+                                <td className="py-1.5 px-3 border-r border-slate-800 text-right">{fmtNum(item.sum_of_due)}</td>
+                                <td className="py-1.5 px-3 border-r border-slate-800 text-right">{fmtNum(item.sum_of_advnc)}</td>
+                                <td className="py-1.5 px-3 border-r border-slate-800 text-right">{fmtNum(item.sum_of_actual_bill)}</td>
+                                <td className="py-1.5 px-3 border-r border-slate-800 text-right">{fmtNum(item.sum_of_50)}</td>
+                              </>
+                            )}
                             <td className="py-1.5 px-3 text-right font-bold text-amber-300">{fmtNum(item.sum_of_target)}</td>
                           </tr>
                         ))
@@ -1430,12 +1516,16 @@ export default function MonthlyTargetView({ refreshTrigger }) {
                       {/* Analog Total Row */}
                       <tr className="bg-slate-900 font-bold border-y border-slate-700 text-white">
                         <td colSpan={2} className="py-2 px-3 border-r border-slate-800 font-bold text-indigo-200">Analog Total</td>
-                        <td className="py-2 px-3 border-r border-slate-800 text-right">{fmtNum(analogTotalCount)}</td>
-                        <td className="py-2 px-3 border-r border-slate-800 text-right">{fmtNum(analogTotalRent)}</td>
-                        <td className="py-2 px-3 border-r border-slate-800 text-right">{fmtNum(analogTotalDue)}</td>
-                        <td className="py-2 px-3 border-r border-slate-800 text-right">{fmtNum(analogTotalAdv)}</td>
-                        <td className="py-2 px-3 border-r border-slate-800 text-right">{fmtNum(analogTotalActual)}</td>
-                        <td className="py-2 px-3 border-r border-slate-800 text-right">{fmtNum(analogTotalFifty)}</td>
+                        {!isTargetOnly && (
+                          <>
+                            <td className="py-2 px-3 border-r border-slate-800 text-right">{fmtNum(analogTotalCount)}</td>
+                            <td className="py-2 px-3 border-r border-slate-800 text-right">{fmtNum(analogTotalRent)}</td>
+                            <td className="py-2 px-3 border-r border-slate-800 text-right">{fmtNum(analogTotalDue)}</td>
+                            <td className="py-2 px-3 border-r border-slate-800 text-right">{fmtNum(analogTotalAdv)}</td>
+                            <td className="py-2 px-3 border-r border-slate-800 text-right">{fmtNum(analogTotalActual)}</td>
+                            <td className="py-2 px-3 border-r border-slate-800 text-right">{fmtNum(analogTotalFifty)}</td>
+                          </>
+                        )}
                         <td className="py-2 px-3 text-right text-amber-400 font-extrabold">{fmtNum(analogTotalTarget)}</td>
                       </tr>
                     </>
@@ -1449,7 +1539,7 @@ export default function MonthlyTargetView({ refreshTrigger }) {
                           <td className="py-3 px-3 border-r border-slate-800 text-center align-middle font-black text-emerald-400 bg-slate-900/40 text-xs sm:text-sm tracking-wide">
                             Digital
                           </td>
-                          <td colSpan={8} className="py-3 px-3 text-slate-400 italic text-center">
+                          <td colSpan={isTargetOnly ? 2 : 8} className="py-3 px-3 text-slate-400 italic text-center">
                             No Digital records match the selected filter
                           </td>
                         </tr>
@@ -1465,12 +1555,16 @@ export default function MonthlyTargetView({ refreshTrigger }) {
                               </td>
                             )}
                             <td className="py-1.5 px-3 border-r border-slate-800 font-semibold text-white">{item.collector_name}</td>
-                            <td className="py-1.5 px-3 border-r border-slate-800 text-right">{fmtNum(item.count_of_id)}</td>
-                            <td className="py-1.5 px-3 border-r border-slate-800 text-right">{fmtNum(item.sum_of_rent)}</td>
-                            <td className="py-1.5 px-3 border-r border-slate-800 text-right">{fmtNum(item.sum_of_due)}</td>
-                            <td className="py-1.5 px-3 border-r border-slate-800 text-right">{fmtNum(item.sum_of_advnc)}</td>
-                            <td className="py-1.5 px-3 border-r border-slate-800 text-right">{fmtNum(item.sum_of_actual_bill)}</td>
-                            <td className="py-1.5 px-3 border-r border-slate-800 text-right">{fmtNum(item.sum_of_50)}</td>
+                            {!isTargetOnly && (
+                              <>
+                                <td className="py-1.5 px-3 border-r border-slate-800 text-right">{fmtNum(item.count_of_id)}</td>
+                                <td className="py-1.5 px-3 border-r border-slate-800 text-right">{fmtNum(item.sum_of_rent)}</td>
+                                <td className="py-1.5 px-3 border-r border-slate-800 text-right">{fmtNum(item.sum_of_due)}</td>
+                                <td className="py-1.5 px-3 border-r border-slate-800 text-right">{fmtNum(item.sum_of_advnc)}</td>
+                                <td className="py-1.5 px-3 border-r border-slate-800 text-right">{fmtNum(item.sum_of_actual_bill)}</td>
+                                <td className="py-1.5 px-3 border-r border-slate-800 text-right">{fmtNum(item.sum_of_50)}</td>
+                              </>
+                            )}
                             <td className="py-1.5 px-3 text-right font-bold text-emerald-300">{fmtNum(item.sum_of_target)}</td>
                           </tr>
                         ))
@@ -1479,12 +1573,16 @@ export default function MonthlyTargetView({ refreshTrigger }) {
                       {/* Digital Total Row */}
                       <tr className="bg-slate-900 font-bold border-y border-slate-700 text-white">
                         <td colSpan={2} className="py-2 px-3 border-r border-slate-800 font-bold text-emerald-300">Digital Total</td>
-                        <td className="py-2 px-3 border-r border-slate-800 text-right">{fmtNum(digitalTotalCount)}</td>
-                        <td className="py-2 px-3 border-r border-slate-800 text-right">{fmtNum(digitalTotalRent)}</td>
-                        <td className="py-2 px-3 border-r border-slate-800 text-right">{fmtNum(digitalTotalDue)}</td>
-                        <td className="py-2 px-3 border-r border-slate-800 text-right">{fmtNum(digitalTotalAdv)}</td>
-                        <td className="py-2 px-3 border-r border-slate-800 text-right">{fmtNum(digitalTotalActual)}</td>
-                        <td className="py-2 px-3 border-r border-slate-800 text-right">{fmtNum(digitalTotalFifty)}</td>
+                        {!isTargetOnly && (
+                          <>
+                            <td className="py-2 px-3 border-r border-slate-800 text-right">{fmtNum(digitalTotalCount)}</td>
+                            <td className="py-2 px-3 border-r border-slate-800 text-right">{fmtNum(digitalTotalRent)}</td>
+                            <td className="py-2 px-3 border-r border-slate-800 text-right">{fmtNum(digitalTotalDue)}</td>
+                            <td className="py-2 px-3 border-r border-slate-800 text-right">{fmtNum(digitalTotalAdv)}</td>
+                            <td className="py-2 px-3 border-r border-slate-800 text-right">{fmtNum(digitalTotalActual)}</td>
+                            <td className="py-2 px-3 border-r border-slate-800 text-right">{fmtNum(digitalTotalFifty)}</td>
+                          </>
+                        )}
                         <td className="py-2 px-3 text-right text-emerald-400 font-extrabold">{fmtNum(digitalTotalTarget)}</td>
                       </tr>
                     </>
@@ -1493,12 +1591,16 @@ export default function MonthlyTargetView({ refreshTrigger }) {
                   {/* --- GRAND TOTAL ROW --- */}
                   <tr className="bg-slate-950 font-extrabold border-t-2 border-b-4 border-slate-600 text-white text-xs">
                     <td colSpan={2} className="py-3 px-3 border-r border-slate-800 font-bold text-slate-100">Grand Total</td>
-                    <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandCount)}</td>
-                    <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandRent)}</td>
-                    <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandDue)}</td>
-                    <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandAdv)}</td>
-                    <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandActual)}</td>
-                    <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandFifty)}</td>
+                    {!isTargetOnly && (
+                      <>
+                        <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandCount)}</td>
+                        <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandRent)}</td>
+                        <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandDue)}</td>
+                        <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandAdv)}</td>
+                        <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandActual)}</td>
+                        <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandFifty)}</td>
+                      </>
+                    )}
                     <td className="py-3 px-3 text-right text-amber-400 text-sm font-black">{fmtNum(grandTarget)}</td>
                   </tr>
 
@@ -1516,19 +1618,23 @@ export default function MonthlyTargetView({ refreshTrigger }) {
                 <thead>
                   <tr className="bg-slate-950 border-b border-slate-800 text-slate-300 font-bold text-[11px]">
                     <th className="py-2.5 px-3 border-r border-slate-800">Collector</th>
-                    <th className="py-2.5 px-3 border-r border-slate-800 text-right">Customer</th>
-                    <th className="py-2.5 px-3 border-r border-slate-800 text-right">Rent</th>
-                    <th className="py-2.5 px-3 border-r border-slate-800 text-right">Due</th>
-                    <th className="py-2.5 px-3 border-r border-slate-800 text-right">Advnc</th>
-                    <th className="py-2.5 px-3 border-r border-slate-800 text-right">Actual Bill</th>
-                    <th className="py-2.5 px-3 border-r border-slate-800 text-right">50%</th>
+                    {!isTargetOnly && (
+                      <>
+                        <th className="py-2.5 px-3 border-r border-slate-800 text-right">Customer</th>
+                        <th className="py-2.5 px-3 border-r border-slate-800 text-right">Rent</th>
+                        <th className="py-2.5 px-3 border-r border-slate-800 text-right">Due</th>
+                        <th className="py-2.5 px-3 border-r border-slate-800 text-right">Advnc</th>
+                        <th className="py-2.5 px-3 border-r border-slate-800 text-right">Actual Bill</th>
+                        <th className="py-2.5 px-3 border-r border-slate-800 text-right">50%</th>
+                      </>
+                    )}
                     <th className="py-2.5 px-3 text-right">Target</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/50 text-[11px] text-slate-200">
                   {filteredCollectorWiseList.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="py-4 px-3 text-slate-400 italic text-center">
+                      <td colSpan={isTargetOnly ? 2 : 8} className="py-4 px-3 text-slate-400 italic text-center">
                         No Collector records match the selected filter
                       </td>
                     </tr>
@@ -1543,12 +1649,16 @@ export default function MonthlyTargetView({ refreshTrigger }) {
                             </span>
                           )}
                         </td>
-                        <td className="py-2 px-3 border-r border-slate-800 text-right">{fmtNum(item.count_of_id)}</td>
-                        <td className="py-2 px-3 border-r border-slate-800 text-right">{fmtNum(item.sum_of_rent)}</td>
-                        <td className="py-2 px-3 border-r border-slate-800 text-right">{fmtNum(item.sum_of_due)}</td>
-                        <td className="py-2 px-3 border-r border-slate-800 text-right">{fmtNum(item.sum_of_advnc)}</td>
-                        <td className="py-2 px-3 border-r border-slate-800 text-right">{fmtNum(item.sum_of_actual_bill)}</td>
-                        <td className="py-2 px-3 border-r border-slate-800 text-right">{fmtNum(item.sum_of_50)}</td>
+                        {!isTargetOnly && (
+                          <>
+                            <td className="py-2 px-3 border-r border-slate-800 text-right">{fmtNum(item.count_of_id)}</td>
+                            <td className="py-2 px-3 border-r border-slate-800 text-right">{fmtNum(item.sum_of_rent)}</td>
+                            <td className="py-2 px-3 border-r border-slate-800 text-right">{fmtNum(item.sum_of_due)}</td>
+                            <td className="py-2 px-3 border-r border-slate-800 text-right">{fmtNum(item.sum_of_advnc)}</td>
+                            <td className="py-2 px-3 border-r border-slate-800 text-right">{fmtNum(item.sum_of_actual_bill)}</td>
+                            <td className="py-2 px-3 border-r border-slate-800 text-right">{fmtNum(item.sum_of_50)}</td>
+                          </>
+                        )}
                         <td className="py-2 px-3 text-right font-extrabold text-amber-300">{fmtNum(item.sum_of_target)}</td>
                       </tr>
                     ))
@@ -1557,12 +1667,16 @@ export default function MonthlyTargetView({ refreshTrigger }) {
                   {/* Grand Total Row */}
                   <tr className="bg-slate-950 font-extrabold border-t-2 border-b-4 border-slate-600 text-white text-xs">
                     <td className="py-3 px-3 border-r border-slate-800">Grand Total</td>
-                    <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandCount)}</td>
-                    <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandRent)}</td>
-                    <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandDue)}</td>
-                    <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandAdv)}</td>
-                    <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandActual)}</td>
-                    <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandFifty)}</td>
+                    {!isTargetOnly && (
+                      <>
+                        <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandCount)}</td>
+                        <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandRent)}</td>
+                        <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandDue)}</td>
+                        <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandAdv)}</td>
+                        <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandActual)}</td>
+                        <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandFifty)}</td>
+                      </>
+                    )}
                     <td className="py-3 px-3 text-right text-amber-400 text-sm font-black">{fmtNum(grandTarget)}</td>
                   </tr>
                 </tbody>
@@ -1580,19 +1694,23 @@ export default function MonthlyTargetView({ refreshTrigger }) {
                   <tr className="bg-slate-950 border-b border-slate-800 text-slate-300 font-bold text-[11px]">
                     <th className="py-2.5 px-3 border-r border-slate-800">Collector</th>
                     <th className="py-2.5 px-3 border-r border-slate-800">Type</th>
-                    <th className="py-2.5 px-3 border-r border-slate-800 text-right">Customer</th>
-                    <th className="py-2.5 px-3 border-r border-slate-800 text-right">Rent</th>
-                    <th className="py-2.5 px-3 border-r border-slate-800 text-right">Due</th>
-                    <th className="py-2.5 px-3 border-r border-slate-800 text-right">Advnc</th>
-                    <th className="py-2.5 px-3 border-r border-slate-800 text-right">Actual Bill</th>
-                    <th className="py-2.5 px-3 border-r border-slate-800 text-right">50%</th>
+                    {!isTargetOnly && (
+                      <>
+                        <th className="py-2.5 px-3 border-r border-slate-800 text-right">Customer</th>
+                        <th className="py-2.5 px-3 border-r border-slate-800 text-right">Rent</th>
+                        <th className="py-2.5 px-3 border-r border-slate-800 text-right">Due</th>
+                        <th className="py-2.5 px-3 border-r border-slate-800 text-right">Advnc</th>
+                        <th className="py-2.5 px-3 border-r border-slate-800 text-right">Actual Bill</th>
+                        <th className="py-2.5 px-3 border-r border-slate-800 text-right">50%</th>
+                      </>
+                    )}
                     <th className="py-2.5 px-3 text-right">Target</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/50 text-[11px] text-slate-200">
                   {filteredCollectorTypeList.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="py-4 px-3 text-slate-400 italic text-center">
+                      <td colSpan={isTargetOnly ? 3 : 9} className="py-4 px-3 text-slate-400 italic text-center">
                         No Collector records match the selected filter
                       </td>
                     </tr>
@@ -1608,7 +1726,7 @@ export default function MonthlyTargetView({ refreshTrigger }) {
                         <React.Fragment key={`collector-group-${cIdx}`}>
                           {/* Collector Group Header */}
                           <tr className="bg-slate-900/80 font-bold text-amber-300">
-                            <td colSpan={9} className="py-1.5 px-3 border-b border-slate-800">
+                            <td colSpan={isTargetOnly ? 3 : 9} className="py-1.5 px-3 border-b border-slate-800">
                               👤 {cItem.collector_name}
                             </td>
                           </tr>
@@ -1618,12 +1736,16 @@ export default function MonthlyTargetView({ refreshTrigger }) {
                             <tr className="hover:bg-slate-800/30 transition text-slate-300">
                               <td className="py-1 px-3 border-r border-slate-800 pl-6 text-slate-400">└</td>
                               <td className="py-1 px-3 border-r border-slate-800 font-semibold text-indigo-300">Analog</td>
-                              <td className="py-1 px-3 border-r border-slate-800 text-right">{fmtNum(cItem.analog.count_of_id)}</td>
-                              <td className="py-1 px-3 border-r border-slate-800 text-right">{fmtNum(cItem.analog.sum_of_rent)}</td>
-                              <td className="py-1 px-3 border-r border-slate-800 text-right">{fmtNum(cItem.analog.sum_of_due)}</td>
-                              <td className="py-1 px-3 border-r border-slate-800 text-right">{fmtNum(cItem.analog.sum_of_advnc)}</td>
-                              <td className="py-1 px-3 border-r border-slate-800 text-right">{fmtNum(cItem.analog.sum_of_actual_bill)}</td>
-                              <td className="py-1 px-3 border-r border-slate-800 text-right">{fmtNum(cItem.analog.sum_of_50)}</td>
+                              {!isTargetOnly && (
+                                <>
+                                  <td className="py-1 px-3 border-r border-slate-800 text-right">{fmtNum(cItem.analog.count_of_id)}</td>
+                                  <td className="py-1 px-3 border-r border-slate-800 text-right">{fmtNum(cItem.analog.sum_of_rent)}</td>
+                                  <td className="py-1 px-3 border-r border-slate-800 text-right">{fmtNum(cItem.analog.sum_of_due)}</td>
+                                  <td className="py-1 px-3 border-r border-slate-800 text-right">{fmtNum(cItem.analog.sum_of_advnc)}</td>
+                                  <td className="py-1 px-3 border-r border-slate-800 text-right">{fmtNum(cItem.analog.sum_of_actual_bill)}</td>
+                                  <td className="py-1 px-3 border-r border-slate-800 text-right">{fmtNum(cItem.analog.sum_of_50)}</td>
+                                </>
+                              )}
                               <td className="py-1 px-3 text-right font-bold text-amber-300/90">{fmtNum(cItem.analog.sum_of_target)}</td>
                             </tr>
                           )}
@@ -1633,12 +1755,16 @@ export default function MonthlyTargetView({ refreshTrigger }) {
                             <tr className="hover:bg-slate-800/30 transition text-slate-300">
                               <td className="py-1 px-3 border-r border-slate-800 pl-6 text-slate-400">└</td>
                               <td className="py-1 px-3 border-r border-slate-800 font-semibold text-emerald-300">Digital</td>
-                              <td className="py-1 px-3 border-r border-slate-800 text-right">{fmtNum(cItem.digital.count_of_id)}</td>
-                              <td className="py-1 px-3 border-r border-slate-800 text-right">{fmtNum(cItem.digital.sum_of_rent)}</td>
-                              <td className="py-1 px-3 border-r border-slate-800 text-right">{fmtNum(cItem.digital.sum_of_due)}</td>
-                              <td className="py-1 px-3 border-r border-slate-800 text-right">{fmtNum(cItem.digital.sum_of_advnc)}</td>
-                              <td className="py-1 px-3 border-r border-slate-800 text-right">{fmtNum(cItem.digital.sum_of_actual_bill)}</td>
-                              <td className="py-1 px-3 border-r border-slate-800 text-right">{fmtNum(cItem.digital.sum_of_50)}</td>
+                              {!isTargetOnly && (
+                                <>
+                                  <td className="py-1 px-3 border-r border-slate-800 text-right">{fmtNum(cItem.digital.count_of_id)}</td>
+                                  <td className="py-1 px-3 border-r border-slate-800 text-right">{fmtNum(cItem.digital.sum_of_rent)}</td>
+                                  <td className="py-1 px-3 border-r border-slate-800 text-right">{fmtNum(cItem.digital.sum_of_due)}</td>
+                                  <td className="py-1 px-3 border-r border-slate-800 text-right">{fmtNum(cItem.digital.sum_of_advnc)}</td>
+                                  <td className="py-1 px-3 border-r border-slate-800 text-right">{fmtNum(cItem.digital.sum_of_actual_bill)}</td>
+                                  <td className="py-1 px-3 border-r border-slate-800 text-right">{fmtNum(cItem.digital.sum_of_50)}</td>
+                                </>
+                              )}
                               <td className="py-1 px-3 text-right font-bold text-emerald-300/90">{fmtNum(cItem.digital.sum_of_target)}</td>
                             </tr>
                           )}
@@ -1649,12 +1775,16 @@ export default function MonthlyTargetView({ refreshTrigger }) {
                               <td className="py-1.5 px-3 border-r border-slate-800 text-right text-slate-400 font-sans" colSpan={2}>
                                 {cItem.collector_name} Total
                               </td>
-                              <td className="py-1.5 px-3 border-r border-slate-800 text-right">{fmtNum(cItem.count_of_id)}</td>
-                              <td className="py-1.5 px-3 border-r border-slate-800 text-right">{fmtNum(cItem.sum_of_rent)}</td>
-                              <td className="py-1.5 px-3 border-r border-slate-800 text-right">{fmtNum(cItem.sum_of_due)}</td>
-                              <td className="py-1.5 px-3 border-r border-slate-800 text-right">{fmtNum(cItem.sum_of_advnc)}</td>
-                              <td className="py-1.5 px-3 border-r border-slate-800 text-right">{fmtNum(cItem.sum_of_actual_bill)}</td>
-                              <td className="py-1.5 px-3 border-r border-slate-800 text-right">{fmtNum(cItem.sum_of_50)}</td>
+                              {!isTargetOnly && (
+                                <>
+                                  <td className="py-1.5 px-3 border-r border-slate-800 text-right">{fmtNum(cItem.count_of_id)}</td>
+                                  <td className="py-1.5 px-3 border-r border-slate-800 text-right">{fmtNum(cItem.sum_of_rent)}</td>
+                                  <td className="py-1.5 px-3 border-r border-slate-800 text-right">{fmtNum(cItem.sum_of_due)}</td>
+                                  <td className="py-1.5 px-3 border-r border-slate-800 text-right">{fmtNum(cItem.sum_of_advnc)}</td>
+                                  <td className="py-1.5 px-3 border-r border-slate-800 text-right">{fmtNum(cItem.sum_of_actual_bill)}</td>
+                                  <td className="py-1.5 px-3 border-r border-slate-800 text-right">{fmtNum(cItem.sum_of_50)}</td>
+                                </>
+                              )}
                               <td className="py-1.5 px-3 text-right font-extrabold text-amber-400">{fmtNum(cItem.sum_of_target)}</td>
                             </tr>
                           )}
@@ -1666,12 +1796,16 @@ export default function MonthlyTargetView({ refreshTrigger }) {
                   {/* Grand Total Row */}
                   <tr className="bg-slate-950 font-extrabold border-t-2 border-b-4 border-slate-600 text-white text-xs">
                     <td className="py-3 px-3 border-r border-slate-800" colSpan={2}>Grand Total</td>
-                    <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandCount)}</td>
-                    <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandRent)}</td>
-                    <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandDue)}</td>
-                    <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandAdv)}</td>
-                    <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandActual)}</td>
-                    <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandFifty)}</td>
+                    {!isTargetOnly && (
+                      <>
+                        <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandCount)}</td>
+                        <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandRent)}</td>
+                        <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandDue)}</td>
+                        <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandAdv)}</td>
+                        <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandActual)}</td>
+                        <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandFifty)}</td>
+                      </>
+                    )}
                     <td className="py-3 px-3 text-right text-amber-400 text-sm font-black">{fmtNum(grandTarget)}</td>
                   </tr>
                 </tbody>
@@ -1688,12 +1822,16 @@ export default function MonthlyTargetView({ refreshTrigger }) {
                 <thead>
                   <tr className="bg-slate-950 border-b border-slate-800 text-slate-300 font-bold text-[11px]">
                     <th className="py-2.5 px-3 border-r border-slate-800">Customer Type</th>
-                    <th className="py-2.5 px-3 border-r border-slate-800 text-right">Customer</th>
-                    <th className="py-2.5 px-3 border-r border-slate-800 text-right">Rent</th>
-                    <th className="py-2.5 px-3 border-r border-slate-800 text-right">Due</th>
-                    <th className="py-2.5 px-3 border-r border-slate-800 text-right">Advnc</th>
-                    <th className="py-2.5 px-3 border-r border-slate-800 text-right">Actual Bill</th>
-                    <th className="py-2.5 px-3 border-r border-slate-800 text-right">50%</th>
+                    {!isTargetOnly && (
+                      <>
+                        <th className="py-2.5 px-3 border-r border-slate-800 text-right">Customer</th>
+                        <th className="py-2.5 px-3 border-r border-slate-800 text-right">Rent</th>
+                        <th className="py-2.5 px-3 border-r border-slate-800 text-right">Due</th>
+                        <th className="py-2.5 px-3 border-r border-slate-800 text-right">Advnc</th>
+                        <th className="py-2.5 px-3 border-r border-slate-800 text-right">Actual Bill</th>
+                        <th className="py-2.5 px-3 border-r border-slate-800 text-right">50%</th>
+                      </>
+                    )}
                     <th className="py-2.5 px-3 text-right">Target</th>
                   </tr>
                 </thead>
@@ -1704,12 +1842,16 @@ export default function MonthlyTargetView({ refreshTrigger }) {
                       <td className="py-3 px-3 border-r border-slate-800 font-extrabold text-indigo-300 text-sm">
                         Analog
                       </td>
-                      <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(analogTotalCount)}</td>
-                      <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(analogTotalRent)}</td>
-                      <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(analogTotalDue)}</td>
-                      <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(analogTotalAdv)}</td>
-                      <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(analogTotalActual)}</td>
-                      <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(analogTotalFifty)}</td>
+                      {!isTargetOnly && (
+                        <>
+                          <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(analogTotalCount)}</td>
+                          <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(analogTotalRent)}</td>
+                          <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(analogTotalDue)}</td>
+                          <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(analogTotalAdv)}</td>
+                          <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(analogTotalActual)}</td>
+                          <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(analogTotalFifty)}</td>
+                        </>
+                      )}
                       <td className="py-3 px-3 text-right font-extrabold text-amber-300 text-sm">{fmtNum(analogTotalTarget)}</td>
                     </tr>
                   )}
@@ -1720,12 +1862,16 @@ export default function MonthlyTargetView({ refreshTrigger }) {
                       <td className="py-3 px-3 border-r border-slate-800 font-extrabold text-emerald-400 text-sm">
                         Digital
                       </td>
-                      <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(digitalTotalCount)}</td>
-                      <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(digitalTotalRent)}</td>
-                      <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(digitalTotalDue)}</td>
-                      <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(digitalTotalAdv)}</td>
-                      <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(digitalTotalActual)}</td>
-                      <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(digitalTotalFifty)}</td>
+                      {!isTargetOnly && (
+                        <>
+                          <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(digitalTotalCount)}</td>
+                          <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(digitalTotalRent)}</td>
+                          <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(digitalTotalDue)}</td>
+                          <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(digitalTotalAdv)}</td>
+                          <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(digitalTotalActual)}</td>
+                          <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(digitalTotalFifty)}</td>
+                        </>
+                      )}
                       <td className="py-3 px-3 text-right font-extrabold text-emerald-300 text-sm">{fmtNum(digitalTotalTarget)}</td>
                     </tr>
                   )}
@@ -1733,12 +1879,16 @@ export default function MonthlyTargetView({ refreshTrigger }) {
                   {/* Grand Total Row */}
                   <tr className="bg-slate-950 font-extrabold border-t-2 border-b-4 border-slate-600 text-white text-xs">
                     <td className="py-3 px-3 border-r border-slate-800">Grand Total</td>
-                    <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandCount)}</td>
-                    <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandRent)}</td>
-                    <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandDue)}</td>
-                    <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandAdv)}</td>
-                    <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandActual)}</td>
-                    <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandFifty)}</td>
+                    {!isTargetOnly && (
+                      <>
+                        <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandCount)}</td>
+                        <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandRent)}</td>
+                        <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandDue)}</td>
+                        <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandAdv)}</td>
+                        <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandActual)}</td>
+                        <td className="py-3 px-3 border-r border-slate-800 text-right">{fmtNum(grandFifty)}</td>
+                      </>
+                    )}
                     <td className="py-3 px-3 text-right text-amber-400 text-sm font-black">{fmtNum(grandTarget)}</td>
                   </tr>
                 </tbody>
