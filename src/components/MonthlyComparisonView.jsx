@@ -30,6 +30,21 @@ import {
 // In-memory module cache for instant 0ms tab switching
 const comparisonCache = {};
 
+// Helper to parse "Month Year" (e.g. "September 2026", "October 2026") into comparable timestamp
+const parseMonthYearToTimestamp = (monthStr) => {
+  if (!monthStr || typeof monthStr !== 'string') return 0;
+  const cleaned = monthStr.trim().replace(/-/g, ' ');
+  const t1 = Date.parse(`1 ${cleaned}`);
+  if (!isNaN(t1)) return t1;
+  const t2 = Date.parse(cleaned);
+  return !isNaN(t2) ? t2 : 0;
+};
+
+// Compare months chronologically: < 0 if m1 is earlier than m2, > 0 if m1 is later than m2, 0 if same
+const compareMonths = (m1, m2) => {
+  return parseMonthYearToTimestamp(m1) - parseMonthYearToTimestamp(m2);
+};
+
 export default function MonthlyComparisonView({ refreshTrigger }) {
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
@@ -46,6 +61,11 @@ export default function MonthlyComparisonView({ refreshTrigger }) {
   const [showExportMenu, setShowExportMenu] = useState(false);
   const exportMenuRef = useRef(null);
 
+  // Chronologically sorted months (ascending: earliest to latest)
+  const sortedMonthsAsc = useMemo(() => {
+    return [...months].sort((a, b) => compareMonths(a, b));
+  }, [months]);
+
   // Fetch available target months on mount or refresh
   useEffect(() => {
     fetchMonths();
@@ -55,20 +75,75 @@ export default function MonthlyComparisonView({ refreshTrigger }) {
     try {
       const res = await api.get('/excel/target-months');
       const availMonths = res.data?.months || [];
+      const activeDataMonths = res.data?.active_data_months || [];
       setMonths(availMonths);
 
       if (!baseMonth && !compareMonth) {
-        if (availMonths.length >= 2) {
-          setBaseMonth(availMonths[1] || 'July 2026');
-          setCompareMonth(availMonths[0] || 'August 2026');
-        } else if (availMonths.length === 1) {
-          setBaseMonth(availMonths[0]);
-          setCompareMonth(availMonths[0]);
+        // Preferred candidate pool: if active_data_months has at least 2, prioritize them; else use all available
+        const candidatePool = activeDataMonths.length >= 2 ? [...activeDataMonths] : [...availMonths];
+        
+        // Sort chronologically ascending (earliest to latest)
+        candidatePool.sort((a, b) => compareMonths(a, b));
+
+        if (candidatePool.length >= 2) {
+          // Take the two latest months from the pool:
+          // e.g. [..., 'September 2026', 'October 2026']
+          // Base Month (Month A) must ALWAYS be smaller/earlier -> candidatePool[candidatePool.length - 2]
+          // Compare Month (Month B) must ALWAYS be larger/later -> candidatePool[candidatePool.length - 1]
+          const mEarlier = candidatePool[candidatePool.length - 2];
+          const mLater = candidatePool[candidatePool.length - 1];
+          setBaseMonth(mEarlier);
+          setCompareMonth(mLater);
+        } else if (candidatePool.length === 1) {
+          setBaseMonth(candidatePool[0]);
+          setCompareMonth(candidatePool[0]);
         }
       }
     } catch (err) {
       console.error('Failed to load months:', err);
     }
+  };
+
+  // Handle user changing Base Month (Month A): Base Month must ALWAYS be smaller/earlier than Compare Month
+  const handleBaseMonthChange = (newBase) => {
+    if (compareMonth && compareMonths(newBase, compareMonth) >= 0) {
+      // Find the next available month after newBase
+      const nextLaterMonth = sortedMonthsAsc.find((m) => compareMonths(m, newBase) > 0);
+
+      if (nextLaterMonth) {
+        setCompareMonth(nextLaterMonth);
+      } else {
+        // newBase is the latest month, so adjust base to previous month and compare to newBase
+        const prevEarlierMonth = [...sortedMonthsAsc].reverse().find((m) => compareMonths(m, newBase) < 0);
+        if (prevEarlierMonth) {
+          setBaseMonth(prevEarlierMonth);
+          setCompareMonth(newBase);
+          return;
+        }
+      }
+    }
+    setBaseMonth(newBase);
+  };
+
+  // Handle user changing Compare Month (Month B): Compare Month must ALWAYS be larger/later than Base Month
+  const handleCompareMonthChange = (newCompare) => {
+    if (baseMonth && compareMonths(baseMonth, newCompare) >= 0) {
+      // Find the previous available month before newCompare
+      const prevEarlierMonth = [...sortedMonthsAsc].reverse().find((m) => compareMonths(m, newCompare) < 0);
+
+      if (prevEarlierMonth) {
+        setBaseMonth(prevEarlierMonth);
+      } else {
+        // newCompare is the earliest month, so set base to newCompare and compare to next month
+        const nextLaterMonth = sortedMonthsAsc.find((m) => compareMonths(m, newCompare) > 0);
+        if (nextLaterMonth) {
+          setBaseMonth(newCompare);
+          setCompareMonth(nextLaterMonth);
+          return;
+        }
+      }
+    }
+    setCompareMonth(newCompare);
   };
 
   useEffect(() => {
@@ -87,7 +162,17 @@ export default function MonthlyComparisonView({ refreshTrigger }) {
   const fetchComparisonReport = async (forceRefresh = false) => {
     if (!baseMonth || !compareMonth) return;
 
-    const cacheKey = `${baseMonth}___${compareMonth}`;
+    // Safety guard: Base Month (Month A) must always be earlier than Compare Month (Month B)
+    let actualBase = baseMonth;
+    let actualCompare = compareMonth;
+    if (compareMonths(actualBase, actualCompare) > 0) {
+      actualBase = compareMonth;
+      actualCompare = baseMonth;
+      setBaseMonth(actualBase);
+      setCompareMonth(actualCompare);
+    }
+
+    const cacheKey = `${actualBase}___${actualCompare}`;
     if (!forceRefresh && comparisonCache[cacheKey]) {
       setComparisonData(comparisonCache[cacheKey]);
       setLoading(false);
@@ -100,13 +185,17 @@ export default function MonthlyComparisonView({ refreshTrigger }) {
     try {
       const res = await api.get('/excel/monthly-comparison-report', {
         params: {
-          base_month: baseMonth,
-          compare_month: compareMonth
+          base_month: actualBase,
+          compare_month: actualCompare
         }
       });
       const data = res.data?.data || null;
       comparisonCache[cacheKey] = data;
       setComparisonData(data);
+      if (data?.base_month && data?.compare_month) {
+        if (data.base_month !== baseMonth) setBaseMonth(data.base_month);
+        if (data.compare_month !== compareMonth) setCompareMonth(data.compare_month);
+      }
     } catch (err) {
       console.error('Failed to fetch monthly comparison report:', err);
       setError(err.response?.data?.message || 'Failed to fetch comparison report.');
@@ -119,12 +208,19 @@ export default function MonthlyComparisonView({ refreshTrigger }) {
   const handleExportExcel = async () => {
     if (!baseMonth || !compareMonth) return;
 
+    let actualBase = baseMonth;
+    let actualCompare = compareMonth;
+    if (compareMonths(actualBase, actualCompare) > 0) {
+      actualBase = compareMonth;
+      actualCompare = baseMonth;
+    }
+
     setExporting(true);
     try {
       const res = await api.get('/excel/export-comparison-report', {
         params: {
-          base_month: baseMonth,
-          compare_month: compareMonth
+          base_month: actualBase,
+          compare_month: actualCompare
         }
       });
 
@@ -495,36 +591,41 @@ export default function MonthlyComparisonView({ refreshTrigger }) {
       <div className="glass-card p-4 rounded-2xl border border-slate-800 flex flex-wrap items-center justify-between gap-4 no-print">
         <div className="flex flex-wrap items-center gap-4 w-full sm:w-auto">
           
-          {/* Base Month Selector (Month A) */}
+          {/* Base Month Selector (Month A - Earlier) */}
           <div className="flex items-center space-x-2.5 bg-slate-900/90 px-3.5 py-2 rounded-xl border border-rose-500/30">
             <Calendar className="w-4 h-4 text-rose-400" />
-            <span className="text-xs text-rose-300 font-bold">Base Month (Month A):</span>
+            <span className="text-xs text-rose-300 font-bold">Base Month (Month A - Earlier):</span>
             <select
               value={baseMonth}
-              onChange={(e) => setBaseMonth(e.target.value)}
+              onChange={(e) => handleBaseMonthChange(e.target.value)}
               className="bg-transparent text-xs text-white font-extrabold outline-none cursor-pointer pr-2"
             >
-              {months.map((m) => (
-                <option key={m} value={m} className="bg-slate-900 text-slate-200">
+              {sortedMonthsAsc.map((m) => (
+                <option key={`base-${m}`} value={m} className="bg-slate-900 text-slate-200">
                   {m}
                 </option>
               ))}
             </select>
           </div>
 
-          <div className="text-slate-500 font-bold text-sm hidden sm:block">VS</div>
+          {/* Visual Chronological Arrow Indicator */}
+          <div className="hidden sm:flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-slate-800/80 border border-slate-700/60 text-[11px] font-bold text-slate-300">
+            <span>Earlier</span>
+            <span className="text-indigo-400 font-extrabold">➔</span>
+            <span>Later</span>
+          </div>
 
-          {/* Compare Month Selector (Month B) */}
+          {/* Compare Month Selector (Month B - Later) */}
           <div className="flex items-center space-x-2.5 bg-slate-900/90 px-3.5 py-2 rounded-xl border border-emerald-500/30">
             <Calendar className="w-4 h-4 text-emerald-400" />
-            <span className="text-xs text-emerald-300 font-bold">Compare Month (Month B):</span>
+            <span className="text-xs text-emerald-300 font-bold">Compare Month (Month B - Later):</span>
             <select
               value={compareMonth}
-              onChange={(e) => setCompareMonth(e.target.value)}
+              onChange={(e) => handleCompareMonthChange(e.target.value)}
               className="bg-transparent text-xs text-white font-extrabold outline-none cursor-pointer pr-2"
             >
-              {months.map((m) => (
-                <option key={m} value={m} className="bg-slate-900 text-slate-200">
+              {sortedMonthsAsc.map((m) => (
+                <option key={`comp-${m}`} value={m} className="bg-slate-900 text-slate-200">
                   {m}
                 </option>
               ))}
@@ -533,11 +634,26 @@ export default function MonthlyComparisonView({ refreshTrigger }) {
 
         </div>
 
-        {baseMonth === compareMonth && (
-          <div className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 px-3 py-1 rounded-xl font-semibold">
+        {baseMonth === compareMonth ? (
+          <div className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 rounded-xl font-semibold">
             ⚠️ Please select two different months for disconnection & new connection auditing.
           </div>
-        )}
+        ) : compareMonths(baseMonth, compareMonth) > 0 ? (
+          <div className="text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 px-3 py-1.5 rounded-xl font-semibold flex items-center space-x-2">
+            <span>⚠️ Base Month (Month A) must always be earlier than Compare Month (Month B).</span>
+            <button
+              type="button"
+              onClick={() => {
+                const t = baseMonth;
+                setBaseMonth(compareMonth);
+                setCompareMonth(t);
+              }}
+              className="underline hover:text-rose-300 font-bold ml-1 cursor-pointer"
+            >
+              Swap Months
+            </button>
+          </div>
+        ) : null}
       </div>
 
       {/* ========================================================= */}

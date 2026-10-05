@@ -31,6 +31,7 @@ export default function CustomerUpdateReportView({ refreshTrigger, onNavigateToE
   const [monthsData, setMonthsData] = useState({ update_months: [], billing_months: [] });
   const [selectedMonth, setSelectedMonth] = useState('');
   const [filterBy, setFilterBy] = useState('update_month'); // 'update_month' | 'billing_month' | 'all'
+  const [latestOnly, setLatestOnly] = useState(true); // Default: show only latest change per customer field
   const [selectedField, setSelectedField] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   
@@ -81,10 +82,10 @@ export default function CustomerUpdateReportView({ refreshTrigger, onNavigateToE
     }
   };
 
-  // 2. Fetch report data whenever filters or pagination change
+  // 2. Fetch report data whenever filters, latestOnly, or pagination change
   useEffect(() => {
     fetchReport();
-  }, [selectedMonth, filterBy, selectedField, currentPage, pageSize, refreshTrigger]);
+  }, [selectedMonth, filterBy, selectedField, latestOnly, currentPage, pageSize, refreshTrigger]);
 
   // Debounced search query
   useEffect(() => {
@@ -109,6 +110,7 @@ export default function CustomerUpdateReportView({ refreshTrigger, onNavigateToE
           filter_by: filterBy,
           field: selectedField,
           search: searchQuery,
+          latest_only: latestOnly,
           page: currentPage,
           per_page: pageSize,
         }
@@ -158,6 +160,7 @@ export default function CustomerUpdateReportView({ refreshTrigger, onNavigateToE
             filter_by: filterBy,
             field: selectedField,
             search: searchQuery,
+            latest_only: latestOnly,
             all: true,
           }
         });
@@ -183,6 +186,7 @@ export default function CustomerUpdateReportView({ refreshTrigger, onNavigateToE
           'Field Changed': item.field_name || '',
           'Old Value': item.old_value !== null && item.old_value !== '' ? item.old_value : '(empty)',
           'New Value': item.new_value !== null && item.new_value !== '' ? item.new_value : '(empty)',
+          'Total Edits': item.edit_count || 1,
           'Edited By': item.edited_by || 'Admin',
           'Billing Month': billingM,
           'Collector': item.customer_record?.collector_name || 'N/A',
@@ -201,6 +205,7 @@ export default function CustomerUpdateReportView({ refreshTrigger, onNavigateToE
         { wch: 18 }, // Field Changed
         { wch: 18 }, // Old Value
         { wch: 18 }, // New Value
+        { wch: 14 }, // Total Edits
         { wch: 20 }, // Edited By
         { wch: 16 }, // Billing Month
         { wch: 22 }, // Collector
@@ -213,7 +218,8 @@ export default function CustomerUpdateReportView({ refreshTrigger, onNavigateToE
 
       const safeMonth = (selectedMonth || 'All_Months').replace(/\s+/g, '_');
       const safeField = selectedField !== 'all' ? `_${selectedField.replace(/\s+/g, '_')}` : '';
-      const fileName = `Customer_Update_Audit_${safeMonth}${safeField}.xlsx`;
+      const modeSuffix = latestOnly ? '_Latest_Only' : '_All_Edits';
+      const fileName = `Customer_Update_Audit_${safeMonth}${safeField}${modeSuffix}.xlsx`;
 
       XLSX.writeFile(wb, fileName);
     } catch (err) {
@@ -236,6 +242,7 @@ export default function CustomerUpdateReportView({ refreshTrigger, onNavigateToE
           filter_by: filterBy,
           field: selectedField,
           search: searchQuery,
+          latest_only: latestOnly,
         }
       });
 
@@ -541,6 +548,40 @@ export default function CustomerUpdateReportView({ refreshTrigger, onNavigateToE
             </button>
           </div>
 
+          {/* Mode Toggle: Latest Change Only vs All Edit Logs */}
+          <div className="flex items-center space-x-1.5 bg-slate-900 px-3 py-1.5 rounded-xl border border-slate-800 text-xs">
+            <span className="text-slate-400 text-[11px] font-semibold">Changes:</span>
+            <button
+              onClick={() => {
+                setLatestOnly(true);
+                setCurrentPage(1);
+              }}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center space-x-1.5 ${
+                latestOnly
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+              title="Show only the most recent change for each customer field"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Latest Change Only</span>
+            </button>
+            <button
+              onClick={() => {
+                setLatestOnly(false);
+                setCurrentPage(1);
+              }}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                !latestOnly
+                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+              title="Show full history of all edits"
+            >
+              All Edit Logs
+            </button>
+          </div>
+
         </div>
 
         {/* Selected Month Badge / Counter */}
@@ -549,7 +590,9 @@ export default function CustomerUpdateReportView({ refreshTrigger, onNavigateToE
           <span className="px-2.5 py-1 rounded-lg bg-slate-800 font-bold text-white border border-slate-700">
             {selectedMonth === 'all' ? 'All Months' : selectedMonth}
           </span>
-          <span className="text-amber-400 font-bold">({totalCount} updates found)</span>
+          <span className="text-amber-400 font-bold">
+            ({totalCount} {latestOnly ? 'distinct changes' : 'total logs'})
+          </span>
         </div>
       </div>
 
@@ -766,6 +809,11 @@ export default function CustomerUpdateReportView({ refreshTrigger, onNavigateToE
                               <div className="p-1.5 rounded-lg bg-rose-500/10 border border-rose-500/25 text-rose-300 font-mono text-[11px] truncate print:border-black print:text-black" title={item.old_value || '(empty)'}>
                                 {item.old_value !== null && item.old_value !== '' ? item.old_value : <em className="text-slate-600 font-normal">None</em>}
                               </div>
+                              {latestOnly && item.edit_count > 1 && item.initial_old_value !== undefined && item.initial_old_value !== item.old_value && (
+                                <div className="text-[10px] text-slate-500 mt-0.5 no-print" title={`Initial value before ${item.edit_count} edits was: ${item.initial_old_value}`}>
+                                  Initial: <span className="line-through">{item.initial_old_value}</span>
+                                </div>
+                              )}
                             </td>
 
                             {/* Arrow Indicator */}
@@ -778,6 +826,13 @@ export default function CustomerUpdateReportView({ refreshTrigger, onNavigateToE
                               <div className="p-1.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-mono font-bold text-[11px] truncate print:border-black print:text-black" title={item.new_value || '(empty)'}>
                                 {item.new_value !== null && item.new_value !== '' ? item.new_value : <em className="text-slate-600 font-normal">Cleared</em>}
                               </div>
+                              {latestOnly && item.edit_count > 1 && (
+                                <div className="text-[10px] text-amber-400 font-semibold mt-0.5 no-print flex items-center space-x-1" title={`Modified ${item.edit_count} times in total. Showing latest change.`}>
+                                  <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 text-[9px] font-bold">
+                                    {item.edit_count} edits
+                                  </span>
+                                </div>
+                              )}
                             </td>
 
                             {/* Edited By */}

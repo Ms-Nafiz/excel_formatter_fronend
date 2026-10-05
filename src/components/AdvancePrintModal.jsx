@@ -99,7 +99,7 @@ export default function AdvancePrintModal({
     // 1. Instant load from in-memory cache if available (0ms delay)
     if (fileId && fileDataCache.has(fileId)) {
       const cached = fileDataCache.get(fileId);
-      if (cached.rows && cached.rows.length > 0 && cached.rows[0]._db_previous_dues !== undefined) {
+      if (cached.rows && cached.rows.length > 0 && cached.rows[0]._db_previous_dues !== undefined && cached.rows[0]._db_advance !== undefined) {
         setHeaders(cached.headers);
         setRows(cached.rows);
         setSelectedColumns(cached.headers);
@@ -186,7 +186,7 @@ export default function AdvancePrintModal({
   const duesHeaderKey = useMemo(() => {
     const explicitKey = headers.find((h) => {
       const hLower = h.toLowerCase().trim().replace(/_/g, ' ');
-      return !hLower.includes('total') && ['previous dues', 'prev dues', 'previous baki', 'bokea'].some((k) => hLower.includes(k));
+      return !hLower.includes('total') && ['previous dues', 'prev dues', 'previous due', 'prev due', 'previous baki', 'bokea'].some((k) => hLower.includes(k));
     });
     if (explicitKey) return explicitKey;
 
@@ -198,9 +198,45 @@ export default function AdvancePrintModal({
   }, [headers]);
 
   const advanceHeaderKey = useMemo(() => {
-    return headers.find((h) =>
-      ['advance', 'adv', 'advance amount'].includes(h.toLowerCase().trim())
-    ) || 'Advance';
+    const explicitKey = headers.find((h) => {
+      const hLower = h.toLowerCase().trim().replace(/_/g, ' ');
+      return !hLower.includes('total') && ['advance amount', 'advance', 'adv', 'agrim'].some((k) => hLower === k || hLower.startsWith(k));
+    });
+    if (explicitKey) return explicitKey;
+
+    const genericKey = headers.find((h) => {
+      const hLower = h.toLowerCase().trim().replace(/_/g, ' ');
+      return !hLower.includes('total') && ['advance', 'adv', 'agrim'].some((k) => hLower.includes(k));
+    });
+    return genericKey || 'Advance';
+  }, [headers]);
+
+  const discountHeaderKey = useMemo(() => {
+    const explicitKey = headers.find((h) => {
+      const hLower = h.toLowerCase().trim().replace(/_/g, ' ');
+      return !hLower.includes('total') && ['discount', 'disc', 'less', 'chhar', 'chot'].some((k) => hLower === k || hLower.startsWith(k));
+    });
+    if (explicitKey) return explicitKey;
+
+    const genericKey = headers.find((h) => {
+      const hLower = h.toLowerCase().trim().replace(/_/g, ' ');
+      return !hLower.includes('total') && ['discount', 'disc', 'less'].some((k) => hLower.includes(k));
+    });
+    return genericKey || 'Discount';
+  }, [headers]);
+
+  const totalHeaderKey = useMemo(() => {
+    const explicitKey = headers.find((h) => {
+      const hLower = h.toLowerCase().trim().replace(/_/g, ' ');
+      return ['total due', 'total bill', 'total payable', 'net total', 'total amount'].some((k) => hLower === k || hLower.startsWith(k));
+    });
+    if (explicitKey) return explicitKey;
+
+    const genericKey = headers.find((h) => {
+      const hLower = h.toLowerCase().trim().replace(/_/g, ' ');
+      return hLower === 'total' || hLower === 'total due' || hLower === 'total baki';
+    });
+    return genericKey || null;
   }, [headers]);
 
   const dateHeaderKey = useMemo(() => {
@@ -314,6 +350,8 @@ export default function AdvancePrintModal({
       { key: 'id', label: 'Customer ID' },
       { key: 'rent', label: 'Monthly Rent' },
       { key: 'dues', label: 'Previous Dues' },
+      { key: 'advance', label: 'Advance' },
+      { key: 'discount', label: 'Discount' },
       { key: 'total', label: 'Total Amount' },
       { key: 'collector', label: 'Collector Name' },
       { key: 'status', label: 'Customer Status' },
@@ -338,6 +376,16 @@ export default function AdvancePrintModal({
     const cleaned = String(val).replace(/[^0-9.-]/g, '');
     const parsed = parseFloat(cleaned);
     return isNaN(parsed) ? 0 : parsed;
+  };
+
+  // Helper to safely format currency values with negative sign handling
+  const formatCurrency = (val) => {
+    if (val === undefined || val === null || isNaN(val)) return '৳0';
+    const num = typeof val === 'number' ? val : parseNumeric(val);
+    if (num < 0) {
+      return `-৳${Math.abs(num).toLocaleString()}`;
+    }
+    return `৳${num.toLocaleString()}`;
   };
 
   // Helper to safely parse date parts from DD-MM-YYYY, YYYY-MM-DD, or Month-Year strings
@@ -472,6 +520,18 @@ export default function AdvancePrintModal({
         : (row[duesHeaderKey] ?? row['Previous Dues'] ?? row['previous_dues'] ?? row['Dues'] ?? row['due'] ?? row['prev_dues'] ?? 0);
       return parseNumeric(rawDues);
     }
+    if (key === 'advance') {
+      const rawAdv = row._db_advance !== undefined
+        ? row._db_advance
+        : (row[advanceHeaderKey] ?? row['Advance'] ?? row['advance'] ?? row['Adv'] ?? row['adv'] ?? row['Advance Amount'] ?? 0);
+      return parseNumeric(rawAdv);
+    }
+    if (key === 'discount') {
+      const rawDisc = row._db_discount !== undefined
+        ? row._db_discount
+        : (row[discountHeaderKey] ?? row['Discount'] ?? row['discount'] ?? row['Disc'] ?? row['disc'] ?? row['Less'] ?? row['less'] ?? 0);
+      return parseNumeric(rawDisc);
+    }
     if (key === 'total') {
       const rawRent = row._db_monthly_rent !== undefined
         ? row._db_monthly_rent
@@ -479,7 +539,28 @@ export default function AdvancePrintModal({
       const rawDues = row._db_previous_dues !== undefined
         ? row._db_previous_dues
         : (row[duesHeaderKey] ?? row['Previous Dues'] ?? row['previous_dues'] ?? row['Dues'] ?? row['due'] ?? row['prev_dues'] ?? 0);
-      return parseNumeric(rawRent) + parseNumeric(rawDues);
+      const rawAdv = row._db_advance !== undefined
+        ? row._db_advance
+        : (row[advanceHeaderKey] ?? row['Advance'] ?? row['advance'] ?? row['Adv'] ?? row['adv'] ?? row['Advance Amount'] ?? 0);
+      const rawDisc = row._db_discount !== undefined
+        ? row._db_discount
+        : (row[discountHeaderKey] ?? row['Discount'] ?? row['discount'] ?? row['Disc'] ?? row['disc'] ?? row['Less'] ?? row['less'] ?? 0);
+
+      const rentVal = parseNumeric(rawRent);
+      const duesVal = parseNumeric(rawDues);
+      const advVal = parseNumeric(rawAdv);
+      const discVal = parseNumeric(rawDisc);
+
+      let totalVal = (rentVal + duesVal) - advVal - discVal;
+      if (totalHeaderKey && row[totalHeaderKey] !== undefined && row[totalHeaderKey] !== null && row[totalHeaderKey] !== '') {
+        const rawTotal = parseNumeric(row[totalHeaderKey]);
+        if (Math.abs(rawTotal - (rentVal + duesVal)) < 0.01 && (advVal > 0 || discVal > 0)) {
+          totalVal = rawTotal - advVal - discVal;
+        } else if (row._db_advance === undefined && row._db_discount === undefined && row._db_monthly_rent === undefined && row._db_previous_dues === undefined) {
+          totalVal = rawTotal;
+        }
+      }
+      return totalVal;
     }
     if (key === 'collector') {
       return String(row[collectorHeaderKey] || '').trim();
@@ -604,7 +685,31 @@ export default function AdvancePrintModal({
       ? r._db_previous_dues
       : (r[duesHeaderKey] ?? r['Previous Dues'] ?? r['previous_dues'] ?? r['Dues'] ?? r['due'] ?? r['prev_dues'] ?? 0);
     const duesVal = parseNumeric(rawDues);
-    const totalVal = rentVal + duesVal;
+
+    const rawAdv = r._db_advance !== undefined
+      ? r._db_advance
+      : (r[advanceHeaderKey] ?? r['Advance'] ?? r['advance'] ?? r['Adv'] ?? r['adv'] ?? r['Advance Amount'] ?? 0);
+    const advVal = parseNumeric(rawAdv);
+
+    const rawDisc = r._db_discount !== undefined
+      ? r._db_discount
+      : (r[discountHeaderKey] ?? r['Discount'] ?? r['discount'] ?? r['Disc'] ?? r['disc'] ?? r['Less'] ?? r['less'] ?? 0);
+    const discVal = parseNumeric(rawDisc);
+
+    // Dynamic Total: (Rent + Previous Dues) - Advance - Discount
+    let totalVal = (rentVal + duesVal) - advVal - discVal;
+
+    // Check if uploaded row contains an explicit Total column
+    if (totalHeaderKey && r[totalHeaderKey] !== undefined && r[totalHeaderKey] !== null && r[totalHeaderKey] !== '') {
+      const rawTotal = parseNumeric(r[totalHeaderKey]);
+      // If the Excel column was merely (Rent + Dues) without factoring in advance/discount, properly deduct them
+      if (Math.abs(rawTotal - (rentVal + duesVal)) < 0.01 && (advVal > 0 || discVal > 0)) {
+        totalVal = rawTotal - advVal - discVal;
+      } else if (r._db_advance === undefined && r._db_discount === undefined && r._db_monthly_rent === undefined && r._db_previous_dues === undefined) {
+        // If raw Total has additional custom deductions (e.g. pre-collected amounts in Excel) and no DB edit overrides exist
+        totalVal = rawTotal;
+      }
+    }
     
     const rawDate =
       r[dateHeaderKey] ??
@@ -628,6 +733,8 @@ export default function AdvancePrintModal({
       collector: String(r[collectorHeaderKey] || '').trim(),
       rent: rentVal,
       previousDues: duesVal,
+      advance: advVal,
+      discount: discVal,
       total: totalVal,
       date: dateVal,
       isPreviousMonth: isLastMonth,
@@ -703,6 +810,9 @@ export default function AdvancePrintModal({
     statusHeaderKey,
     rentHeaderKey,
     duesHeaderKey,
+    advanceHeaderKey,
+    discountHeaderKey,
+    totalHeaderKey,
     headers,
   ]);
 
@@ -747,6 +857,7 @@ export default function AdvancePrintModal({
     let totalRent = 0;
     let totalDues = 0;
     let totalAdvance = 0;
+    let totalDiscount = 0;
     let totalPayable = 0;
 
     filteredAndSortedRows.forEach((r, idx) => {
@@ -756,8 +867,9 @@ export default function AdvancePrintModal({
       const stdData = getStandardRowData(r, idx);
       totalRent += stdData.rent;
       totalDues += stdData.previousDues;
+      totalAdvance += stdData.advance;
+      totalDiscount += stdData.discount;
       totalPayable += stdData.total;
-      totalAdvance += parseFloat(r[advanceHeaderKey]) || 0;
     });
 
     return {
@@ -766,9 +878,18 @@ export default function AdvancePrintModal({
       totalRent,
       totalDues,
       totalAdvance,
+      totalDiscount,
       totalPayable,
     };
-  }, [filteredAndSortedRows, statusHeaderKey, rentHeaderKey, duesHeaderKey, advanceHeaderKey]);
+  }, [
+    filteredAndSortedRows,
+    statusHeaderKey,
+    rentHeaderKey,
+    duesHeaderKey,
+    advanceHeaderKey,
+    discountHeaderKey,
+    totalHeaderKey,
+  ]);
 
   // Column Toggle Handler
   const handleToggleColumn = (colName) => {
@@ -822,7 +943,7 @@ export default function AdvancePrintModal({
 
         {/* Printable Overall Summary Matrix Box */}
         {showSummaries && (
-          <div className="mb-6 p-4 bg-slate-50 border border-slate-300 rounded-xl grid grid-cols-2 sm:grid-cols-5 gap-3 text-center">
+          <div className="mb-6 p-4 bg-slate-50 border border-slate-300 rounded-xl grid grid-cols-2 sm:grid-cols-7 gap-3 text-center">
             <div className="p-2 border-r border-slate-200">
               <p className="text-[10px] text-slate-500 font-bold uppercase">Total Records</p>
               <p className="text-sm font-extrabold text-slate-900">{grandTotals.totalRows}</p>
@@ -839,9 +960,17 @@ export default function AdvancePrintModal({
               <p className="text-[10px] text-slate-500 font-bold uppercase">Total Dues</p>
               <p className="text-sm font-extrabold text-rose-700">৳{grandTotals.totalDues.toLocaleString()}</p>
             </div>
+            <div className="p-2 border-r border-slate-200">
+              <p className="text-[10px] text-slate-500 font-bold uppercase">Total Advance</p>
+              <p className="text-sm font-extrabold text-amber-600">৳{grandTotals.totalAdvance.toLocaleString()}</p>
+            </div>
+            <div className="p-2 border-r border-slate-200">
+              <p className="text-[10px] text-slate-500 font-bold uppercase">Total Discount</p>
+              <p className="text-sm font-extrabold text-purple-600">৳{grandTotals.totalDiscount.toLocaleString()}</p>
+            </div>
             <div className="p-2">
               <p className="text-[10px] text-slate-500 font-bold uppercase">Total Payable</p>
-              <p className="text-sm font-extrabold text-indigo-700">৳{grandTotals.totalPayable.toLocaleString()}</p>
+              <p className="text-sm font-extrabold text-indigo-700">{formatCurrency(grandTotals.totalPayable)}</p>
             </div>
           </div>
         )}
@@ -852,6 +981,8 @@ export default function AdvancePrintModal({
             // Group summary metrics
             let groupRent = 0;
             let groupDues = 0;
+            let groupAdvance = 0;
+            let groupDiscount = 0;
             let groupPayable = 0;
             let groupActive = 0;
 
@@ -859,6 +990,8 @@ export default function AdvancePrintModal({
               const stdData = getStandardRowData(r, idx);
               groupRent += stdData.rent;
               groupDues += stdData.previousDues;
+              groupAdvance += stdData.advance;
+              groupDiscount += stdData.discount;
               groupPayable += stdData.total;
               const st = String(r[statusHeaderKey] || 'Active').trim().toLowerCase();
               if (st === 'active') groupActive++;
@@ -893,11 +1026,13 @@ export default function AdvancePrintModal({
                     </span>
                   </div>
 
-                  <div className="text-[10px] font-semibold text-slate-700 space-x-2.5">
+                  <div className="text-[10px] font-semibold text-slate-700 flex flex-wrap items-center gap-x-2.5 gap-y-1">
                     <span>Active: <strong className="text-emerald-700">{groupActive}</strong></span>
                     <span>Rent: <strong>৳{groupRent.toLocaleString()}</strong></span>
                     <span>Dues: <strong className="text-rose-700">৳{groupDues.toLocaleString()}</strong></span>
-                    <span>Total: <strong className="text-indigo-700">৳{groupPayable.toLocaleString()}</strong></span>
+                    {groupAdvance > 0 && <span>Adv: <strong className="text-amber-600">৳{groupAdvance.toLocaleString()}</strong></span>}
+                    {groupDiscount > 0 && <span>Disc: <strong className="text-purple-600">৳{groupDiscount.toLocaleString()}</strong></span>}
+                    <span>Total: <strong className="text-indigo-700">{formatCurrency(groupPayable)}</strong></span>
                   </div>
                 </div>
 
@@ -941,7 +1076,7 @@ export default function AdvancePrintModal({
                                 ৳{std.previousDues.toLocaleString()}
                               </td>
                               <td className={`${densityCellClasses.td} border-r border-slate-300 text-right font-extrabold text-indigo-700`}>
-                                ৳{std.total.toLocaleString()}
+                                {formatCurrency(std.total)}
                               </td>
                               <td className={`${densityCellClasses.td} border-r border-slate-300 text-center text-[7.5px] leading-none tracking-tight whitespace-nowrap`}>
                                 {std.isPreviousMonth ? (
@@ -970,7 +1105,7 @@ export default function AdvancePrintModal({
                             ৳{groupDues.toLocaleString()}
                           </td>
                           <td className={`${densityCellClasses.subtotal} border-r border-slate-300 text-right text-indigo-700`}>
-                            ৳{groupPayable.toLocaleString()}
+                            {formatCurrency(groupPayable)}
                           </td>
                           <td className="border-r border-slate-300" />
                         </tr>
@@ -1021,6 +1156,27 @@ export default function AdvancePrintModal({
                               return (
                                 <td key={colIdx} className={`${densityCellClasses.subtotal} border-r border-slate-300 text-rose-700`}>
                                   ৳{groupDues.toLocaleString()}
+                                </td>
+                              );
+                            }
+                            if (col === advanceHeaderKey) {
+                              return (
+                                <td key={colIdx} className={`${densityCellClasses.subtotal} border-r border-slate-300 text-amber-600`}>
+                                  ৳{groupAdvance.toLocaleString()}
+                                </td>
+                              );
+                            }
+                            if (col === discountHeaderKey) {
+                              return (
+                                <td key={colIdx} className={`${densityCellClasses.subtotal} border-r border-slate-300 text-purple-600`}>
+                                  ৳{groupDiscount.toLocaleString()}
+                                </td>
+                              );
+                            }
+                            if (col === totalHeaderKey) {
+                              return (
+                                <td key={colIdx} className={`${densityCellClasses.subtotal} border-r border-slate-300 text-indigo-700`}>
+                                  {formatCurrency(groupPayable)}
                                 </td>
                               );
                             }
