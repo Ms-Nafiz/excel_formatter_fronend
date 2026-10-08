@@ -252,16 +252,46 @@ export default function MonthlyComparisonView({ refreshTrigger }) {
     return comparisonData.disconnections || [];
   }, [comparisonData, activeTab]);
 
+  // Format Address for connection audit display and export:
+  // If building name exists, show building name (or add_combined with building name)
+  // If building name does not exist, show area name (or add_combined with area name)
+  const formatDisplayAddress = (item) => {
+    if (!item) return '';
+    const bldg = (item.building_name && item.building_name !== 'N/A') ? String(item.building_name).trim() : '';
+    const area = (item.area_name && item.area_name !== 'N/A') ? String(item.area_name).trim() : '';
+    const rawAdd = (item.add_combined && item.add_combined !== 'N/A') ? String(item.add_combined).trim() : '';
+
+    if (bldg) {
+      if (rawAdd) {
+        return rawAdd.toLowerCase().includes(bldg.toLowerCase()) ? rawAdd : `${rawAdd}, ${bldg}`;
+      }
+      return bldg;
+    }
+
+    if (area) {
+      if (rawAdd) {
+        return rawAdd.toLowerCase().includes(area.toLowerCase()) ? rawAdd : `${rawAdd}, ${area}`;
+      }
+      return area;
+    }
+
+    return rawAdd || '—';
+  };
+
   // Filter list by live search query
   const filteredTabItems = useMemo(() => {
     if (!searchQuery.trim()) return currentTabItems;
     const q = searchQuery.toLowerCase().trim();
 
     return currentTabItems.filter(item => {
+      const displayAddr = formatDisplayAddress(item);
       return (
         (item.customer_id && String(item.customer_id).toLowerCase().includes(q)) ||
         (item.full_name && String(item.full_name).toLowerCase().includes(q)) ||
+        (displayAddr && displayAddr.toLowerCase().includes(q)) ||
         (item.add_combined && String(item.add_combined).toLowerCase().includes(q)) ||
+        (item.area_name && String(item.area_name).toLowerCase().includes(q)) ||
+        (item.building_name && String(item.building_name).toLowerCase().includes(q)) ||
         (item.collector_name && String(item.collector_name).toLowerCase().includes(q)) ||
         (item.customer_type && String(item.customer_type).toLowerCase().includes(q)) ||
         (item.category && String(item.category).toLowerCase().includes(q))
@@ -345,7 +375,7 @@ export default function MonthlyComparisonView({ refreshTrigger }) {
         'SL': index + 1,
         'Customer ID': item.customer_id || '',
         'Customer Name': item.full_name || '',
-        'Address': item.add_combined || '',
+        'Address': formatDisplayAddress(item),
         'Customer Type': item.customer_type || '',
         'Category': item.category || '',
         'Collector': item.collector_name || '',
@@ -416,7 +446,7 @@ export default function MonthlyComparisonView({ refreshTrigger }) {
           'SL': index + 1,
           'Customer ID': item.customer_id || '',
           'Customer Name': item.full_name || '',
-          'Address': item.add_combined || '',
+          'Address': formatDisplayAddress(item),
           'Customer Type': item.customer_type || '',
           'Category': item.category || '',
           'Collector': item.collector_name || '',
@@ -1049,8 +1079,8 @@ export default function MonthlyComparisonView({ refreshTrigger }) {
                             <td className="py-3.5 px-4 text-white font-bold">
                               {item.full_name}
                             </td>
-                            <td className="py-3.5 px-4 text-slate-300 max-w-xs truncate">
-                              {item.add_combined}
+                            <td className="py-3.5 px-4 text-slate-300 max-w-xs truncate" title={formatDisplayAddress(item)}>
+                              {formatDisplayAddress(item)}
                             </td>
                             <td className="py-3.5 px-4">
                               <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
@@ -1093,7 +1123,7 @@ export default function MonthlyComparisonView({ refreshTrigger }) {
                               {item.full_name}
                             </td>
                             <td className="py-2 px-3 text-black">
-                              {item.add_combined}
+                              {formatDisplayAddress(item)}
                             </td>
                             <td className="py-2 px-3 text-black">
                               {item.customer_type}
