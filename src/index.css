@@ -131,7 +131,7 @@ input[type="number"] {
 /* Multi-Page Print Styles Engine */
 @page {
   size: auto;
-  margin: 10mm 12mm 20mm 12mm;
+  margin: 8mm 10mm 20mm 10mm;
 }
 
 @media print {
@@ -235,7 +235,7 @@ input[type="number"] {
     padding: 2px 4px !important;
     font-weight: 800 !important;
     line-height: 1.15 !important;
-    font-size: 8.5pt !important;
+    font-size: var(--table-font-size, 8.5pt);
     font-family: 'Noto Sans Bengali', 'Noto Sans', var(--font-sans) !important;
   }
 
@@ -245,7 +245,7 @@ input[type="number"] {
     color: #0f172a !important;
     padding: 1.5px 4px !important;
     line-height: 1.15 !important;
-    font-size: 8.5pt !important;
+    font-size: var(--table-font-size, 8.5pt);
     font-family: 'Noto Sans Bengali', 'Noto Sans', var(--font-sans) !important;
   }
 

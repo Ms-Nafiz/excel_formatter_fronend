@@ -6,7 +6,6 @@ import {
   X,
   Filter,
   ArrowUpDown,
-  FileSpreadsheet,
   Users,
   MapPin,
   Eye,
@@ -15,7 +14,10 @@ import {
   Layers,
   CheckCircle2,
   Plus,
-  Trash2
+  Minus,
+  Trash2,
+  Type,
+  RotateCcw
 } from 'lucide-react';
 
 // Module-level in-memory cache for excel file data (instant 0ms loading on repeated opens)
@@ -78,9 +80,91 @@ export default function AdvancePrintModal({
     { column: 'flat', order: 'asc' },
   ]);
   const [selectedColumns, setSelectedColumns] = useState([]);
-  const [orientation, setOrientation] = useState('landscape'); // 'landscape' | 'portrait'
+  const [orientation, setOrientation] = useState('portrait'); // 'portrait' | 'landscape'
   const [showSummaries, setShowSummaries] = useState(false);
+  const [showPageNumbers, setShowPageNumbers] = useState(() => {
+    try {
+      const saved = localStorage.getItem('advance_print_show_page_numbers');
+      if (saved !== null) return saved === 'true';
+    } catch (e) {}
+    return true; // Automatic page numbers enabled by default
+  });
+
+  const handleTogglePageNumbers = (checked) => {
+    setShowPageNumbers(checked);
+    try {
+      localStorage.setItem('advance_print_show_page_numbers', String(checked));
+    } catch (e) {}
+  };
   const [rowDensity, setRowDensity] = useState('ultra-compact'); // 'ultra-compact' | 'compact' | 'normal'
+  
+  // Custom List / Table Font Size in Points (pt) with LocalStorage persistence
+  const [listFontSize, setListFontSize] = useState(() => {
+    try {
+      const saved = localStorage.getItem('advance_print_font_size');
+      if (saved) {
+        const parsed = parseFloat(saved);
+        if (!isNaN(parsed) && parsed >= 5 && parsed <= 30) {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+    return 8.5;
+  });
+
+  const handleFontSizeChange = (val) => {
+    setListFontSize(val);
+    const num = parseFloat(val);
+    if (!isNaN(num) && num >= 5 && num <= 30) {
+      try {
+        localStorage.setItem('advance_print_font_size', String(num));
+      } catch (e) {
+        // ignore
+      }
+    }
+  };
+
+  const safeFontSize = useMemo(() => {
+    const num = parseFloat(listFontSize);
+    return !isNaN(num) && num >= 5 && num <= 30 ? num : 8.5;
+  }, [listFontSize]);
+
+  // Synchronize CSS variable on :root and dynamic style sheet for instant live preview & print preview
+  useEffect(() => {
+    if (!isOpen) return;
+
+    // 1. Set CSS variable on :root for global access
+    document.documentElement.style.setProperty('--table-font-size', `${safeFontSize}pt`);
+
+    // 2. Inject or update dynamic style tag directly in document.head (bypassing React 19 JSX style hoisting)
+    const styleId = 'dynamic-advance-print-font-style';
+    let styleEl = document.getElementById(styleId);
+    if (!styleEl) {
+      styleEl = document.createElement('style');
+      styleEl.id = styleId;
+      document.head.appendChild(styleEl);
+    }
+    styleEl.innerHTML = `
+      #printable-advance-document table th,
+      #printable-advance-document table td,
+      #printable-advance-document-portal table th,
+      #printable-advance-document-portal table td {
+        font-size: ${safeFontSize}pt !important;
+      }
+      #printable-advance-document .date-badge-text,
+      #printable-advance-document-portal .date-badge-text {
+        font-size: ${Math.max(6, +(safeFontSize * 0.82).toFixed(1))}pt !important;
+      }
+    `;
+
+    return () => {
+      document.documentElement.style.removeProperty('--table-font-size');
+      const existing = document.getElementById(styleId);
+      if (existing) existing.remove();
+    };
+  }, [isOpen, safeFontSize]);
 
   // Fetch data if fileId is passed and initialRows not available
   useEffect(() => {
@@ -613,22 +697,22 @@ export default function AdvancePrintModal({
   const densityCellClasses = useMemo(() => {
     if (rowDensity === 'ultra-compact') {
       return {
-        th: 'py-0.5 px-1.5 text-[10px] leading-tight font-bold',
-        td: 'py-0.5 px-1.5 text-[10px] leading-tight font-medium',
-        subtotal: 'py-0.5 px-1.5 text-[10px] leading-tight font-extrabold',
+        th: 'py-0.5 px-1.5 leading-tight font-bold',
+        td: 'py-0.5 px-1.5 leading-tight font-medium',
+        subtotal: 'py-0.5 px-1.5 leading-tight font-extrabold',
       };
     }
     if (rowDensity === 'compact') {
       return {
-        th: 'py-1 px-2 text-[11px] leading-snug font-bold',
-        td: 'py-1 px-2 text-[11px] leading-snug font-medium',
-        subtotal: 'py-1 px-2 text-[11px] leading-snug font-extrabold',
+        th: 'py-1 px-2 leading-snug font-bold',
+        td: 'py-1 px-2 leading-snug font-medium',
+        subtotal: 'py-1 px-2 leading-snug font-extrabold',
       };
     }
     return {
-      th: 'py-2 px-2.5 text-xs leading-normal font-bold',
-      td: 'py-1.5 px-2.5 text-xs leading-normal font-medium',
-      subtotal: 'py-2 px-2.5 text-xs leading-normal font-extrabold',
+      th: 'py-2 px-2.5 leading-normal font-bold',
+      td: 'py-1.5 px-2.5 leading-normal font-medium',
+      subtotal: 'py-2 px-2.5 leading-normal font-extrabold',
     };
   }, [rowDensity]);
 
@@ -917,30 +1001,14 @@ export default function AdvancePrintModal({
     return (
       <div
         id="printable-advance-document"
-        className={`printable-card bg-white text-slate-900 p-6 sm:p-8 rounded-2xl shadow-2xl border border-slate-200 min-h-full font-sans text-xs ${
+        className={`printable-card bg-white text-slate-900 p-6 sm:p-8 rounded-2xl shadow-2xl border border-slate-200 min-h-full font-sans ${
           orientation === 'landscape' ? 'w-full' : 'max-w-4xl mx-auto'
         }`}
+        style={{
+          '--table-font-size': `${safeFontSize}pt`,
+          fontSize: `${safeFontSize}pt`,
+        }}
       >
-        {/* Printable Document Header */}
-        <div className="border-b-2 border-slate-900 pb-4 mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center space-x-2">
-              <FileSpreadsheet className="w-6 h-6 text-indigo-600 no-print" />
-              <h1 className="text-xl font-extrabold text-slate-900 uppercase tracking-tight">
-                Chittagong Communications
-              </h1>
-            </div>
-            <p className="text-xs text-slate-600 font-medium mt-0.5">
-              Collector Target & Excel Data Report • {fileName}
-            </p>
-          </div>
-
-          <div className="text-left sm:text-right text-[10px] text-slate-500">
-            <p className="font-semibold text-slate-700">Generated: {new Date().toLocaleDateString()} {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
-            <p className="text-[9px] font-normal text-slate-500 mt-0.5 leading-tight">{printHeaderFilterText}</p>
-          </div>
-        </div>
-
         {/* Printable Overall Summary Matrix Box */}
         {showSummaries && (
           <div className="mb-6 p-4 bg-slate-50 border border-slate-300 rounded-xl grid grid-cols-2 sm:grid-cols-7 gap-3 text-center">
@@ -997,6 +1065,23 @@ export default function AdvancePrintModal({
               if (st === 'active') groupActive++;
             });
 
+            // Extract unique areas present in this group's rows
+            const groupAreas = [...new Set(group.rows.map(r => String(r[areaHeaderKey] || '').trim()).filter(Boolean))];
+
+            // Resolve the area to display (prioritizing explicitly selected areas from filter)
+            let areaDisplay = '';
+            if (selectedAreas.length > 0) {
+              areaDisplay = selectedAreas.join(', ');
+            } else if (groupingMode === 'area') {
+              areaDisplay = group.groupName;
+            } else if (groupAreas.length === 1) {
+              areaDisplay = groupAreas[0];
+            } else if (groupAreas.length > 1 && groupAreas.length <= 3) {
+              areaDisplay = groupAreas.join(', ');
+            } else if (groupAreas.length > 3) {
+              areaDisplay = `${groupAreas.slice(0, 3).join(', ')} (+${groupAreas.length - 3} more)`;
+            }
+
             return (
               <div
                 key={groupIdx}
@@ -1004,29 +1089,47 @@ export default function AdvancePrintModal({
                   groupIdx > 0 ? 'print-page-break mt-6' : ''
                 }`}
               >
-                {/* Group Header Banner */}
-                <div className="bg-slate-100 py-1.5 px-3 border-b border-slate-300 flex items-center justify-between">
-                  <div className="flex items-center space-x-1.5">
-                    {groupingMode === 'collector' ? (
-                      <Users className="w-3.5 h-3.5 text-indigo-600 no-print" />
-                    ) : groupingMode === 'area' ? (
-                      <MapPin className="w-3.5 h-3.5 text-emerald-600 no-print" />
-                    ) : (
-                      <Layers className="w-3.5 h-3.5 text-amber-600 no-print" />
-                    )}
-                    <h3 className="font-bold text-xs text-slate-900 tracking-tight">
-                      {groupingMode === 'collector'
-                        ? `Collector: ${group.groupName}`
-                        : groupingMode === 'area'
-                        ? `Area: ${group.groupName}`
-                        : `Grouping All: ${group.groupName}`}
+                {/* Group Header Banner with Selected Area */}
+                <div className="bg-slate-100 py-1.5 px-3 border-b border-slate-300 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center space-x-1.5 flex-wrap gap-y-1">
+                    <MapPin className="w-3.5 h-3.5 text-emerald-600 no-print" />
+                    <h3
+                      className="font-bold text-slate-900 tracking-tight"
+                      style={{ fontSize: `${Math.max(9, safeFontSize + 1.5)}pt` }}
+                    >
+                      {areaDisplay ? (
+                        <>
+                          <span className="text-emerald-950 font-extrabold uppercase">
+                            Area: {areaDisplay}
+                          </span>
+                          {groupingMode === 'collector' ? (
+                            <span className="text-slate-700 font-bold ml-2">
+                              • Collector: {group.groupName}
+                            </span>
+                          ) : selectedCollectors.length > 0 ? (
+                            <span className="text-slate-700 font-bold ml-2">
+                              • Collector: {selectedCollectors.join(', ')}
+                            </span>
+                          ) : null}
+                        </>
+                      ) : groupingMode === 'collector' ? (
+                        `Collector: ${group.groupName}`
+                      ) : (
+                        `All Areas (${group.rows.length})`
+                      )}
                     </h3>
-                    <span className="px-1.5 py-0.2 bg-slate-200 rounded-full text-[9px] font-semibold text-slate-600">
+                    <span
+                      className="px-1.5 py-0.2 bg-slate-200 rounded-full font-semibold text-slate-600"
+                      style={{ fontSize: `${Math.max(7, safeFontSize - 0.5)}pt` }}
+                    >
                       {group.rows.length} Customer(s)
                     </span>
                   </div>
 
-                  <div className="text-[10px] font-semibold text-slate-700 flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                  <div
+                    className="font-semibold text-slate-700 flex flex-wrap items-center gap-x-2.5 gap-y-1"
+                    style={{ fontSize: `${Math.max(7.5, safeFontSize - 0.5)}pt` }}
+                  >
                     <span>Active: <strong className="text-emerald-700">{groupActive}</strong></span>
                     <span>Rent: <strong>৳{groupRent.toLocaleString()}</strong></span>
                     <span>Dues: <strong className="text-rose-700">৳{groupDues.toLocaleString()}</strong></span>
@@ -1040,16 +1143,16 @@ export default function AdvancePrintModal({
                 <div className="overflow-x-auto">
                   {columnPreset === 'standard' ? (
                     /* Standard Mode explicitly requested: Name, ID, Add Name, Rent, Dues, Total, Date */
-                    <table className="w-full text-left border-collapse">
+                    <table className="w-full text-left border-collapse" style={{ fontSize: `${safeFontSize}pt` }}>
                       <thead>
                         <tr className="bg-slate-200 text-slate-800 uppercase border-b border-slate-300">
-                          <th className={`${densityCellClasses.th} border-r border-slate-300 whitespace-nowrap`}>Name</th>
-                          <th className={`${densityCellClasses.th} border-r border-slate-300 whitespace-nowrap`}>ID</th>
-                          <th className={`${densityCellClasses.th} border-r border-slate-300 whitespace-nowrap`}>Add Name</th>
-                          <th className={`${densityCellClasses.th} border-r border-slate-300 text-right whitespace-nowrap`}>Rent</th>
-                          <th className={`${densityCellClasses.th} border-r border-slate-300 text-right whitespace-nowrap`}>Dues</th>
-                          <th className={`${densityCellClasses.th} border-r border-slate-300 text-right whitespace-nowrap`}>Total</th>
-                          <th className={`${densityCellClasses.th} border-r border-slate-300 text-center whitespace-nowrap`}>Date</th>
+                          <th style={{ fontSize: `${safeFontSize}pt` }} className={`${densityCellClasses.th} border-r border-slate-300 whitespace-nowrap`}>Name</th>
+                          <th style={{ fontSize: `${safeFontSize}pt` }} className={`${densityCellClasses.th} border-r border-slate-300 whitespace-nowrap`}>ID</th>
+                          <th style={{ fontSize: `${safeFontSize}pt` }} className={`${densityCellClasses.th} border-r border-slate-300 whitespace-nowrap`}>Add Name</th>
+                          <th style={{ fontSize: `${safeFontSize}pt` }} className={`${densityCellClasses.th} border-r border-slate-300 text-right whitespace-nowrap`}>Rent</th>
+                          <th style={{ fontSize: `${safeFontSize}pt` }} className={`${densityCellClasses.th} border-r border-slate-300 text-right whitespace-nowrap`}>Dues</th>
+                          <th style={{ fontSize: `${safeFontSize}pt` }} className={`${densityCellClasses.th} border-r border-slate-300 text-right whitespace-nowrap`}>Total</th>
+                          <th style={{ fontSize: `${safeFontSize}pt` }} className={`${densityCellClasses.th} border-r border-slate-300 text-center whitespace-nowrap`}>Date</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-300">
@@ -1059,32 +1162,32 @@ export default function AdvancePrintModal({
                           const isInactive = st === 'inactive';
 
                           return (
-                            <tr key={rIdx} className={`hover:bg-slate-50 ${isInactive ? 'bg-rose-50/60' : ''}`}>
-                              <td className={`${densityCellClasses.td} border-r border-slate-300 font-bold text-indigo-950`}>
+                            <tr key={rIdx} className={`hover:bg-slate-50 ${isInactive ? 'bg-rose-50/60' : ''}`} style={{ fontSize: `${safeFontSize}pt` }}>
+                              <td style={{ fontSize: `${safeFontSize}pt` }} className={`${densityCellClasses.td} border-r border-slate-300 font-bold text-indigo-950`}>
                                 {std.name}
                               </td>
-                              <td className={`${densityCellClasses.td} border-r border-slate-300 font-bold text-slate-900 whitespace-nowrap`}>
+                              <td style={{ fontSize: `${safeFontSize}pt` }} className={`${densityCellClasses.td} border-r border-slate-300 font-bold text-slate-900 whitespace-nowrap`}>
                                 {std.id}
                               </td>
-                              <td className={`${densityCellClasses.td} border-r border-slate-300 text-slate-800`}>
+                              <td style={{ fontSize: `${safeFontSize}pt` }} className={`${densityCellClasses.td} border-r border-slate-300 text-slate-800`}>
                                 {std.add}
                               </td>
-                              <td className={`${densityCellClasses.td} border-r border-slate-300 text-right font-bold text-slate-900`}>
+                              <td style={{ fontSize: `${safeFontSize}pt` }} className={`${densityCellClasses.td} border-r border-slate-300 text-right font-bold text-slate-900`}>
                                 ৳{std.rent.toLocaleString()}
                               </td>
-                              <td className={`${densityCellClasses.td} border-r border-slate-300 text-right font-bold text-rose-700`}>
+                              <td style={{ fontSize: `${safeFontSize}pt` }} className={`${densityCellClasses.td} border-r border-slate-300 text-right font-bold text-rose-700`}>
                                 ৳{std.previousDues.toLocaleString()}
                               </td>
-                              <td className={`${densityCellClasses.td} border-r border-slate-300 text-right font-extrabold text-indigo-700`}>
+                              <td style={{ fontSize: `${safeFontSize}pt` }} className={`${densityCellClasses.td} border-r border-slate-300 text-right font-extrabold text-indigo-700`}>
                                 {formatCurrency(std.total)}
                               </td>
-                              <td className={`${densityCellClasses.td} border-r border-slate-300 text-center text-[7.5px] leading-none tracking-tight whitespace-nowrap`}>
+                              <td style={{ fontSize: `${safeFontSize}pt` }} className={`${densityCellClasses.td} border-r border-slate-300 text-center leading-none tracking-tight whitespace-nowrap`}>
                                 {std.isPreviousMonth ? (
-                                  <span className="inline-block bg-slate-200 text-slate-900 font-extrabold px-1 py-0.5 rounded border border-slate-400 print:bg-slate-200 shadow-sm">
+                                  <span className="inline-block bg-slate-200 text-slate-900 font-extrabold px-1 py-0.5 rounded border border-slate-400 print:bg-slate-200 shadow-sm date-badge-text" style={{ fontSize: `${Math.max(6, +(safeFontSize * 0.82).toFixed(1))}pt` }}>
                                     {std.date}
                                   </span>
                                 ) : (
-                                  <span className="text-slate-600 font-normal">
+                                  <span className="text-slate-600 font-normal date-badge-text" style={{ fontSize: `${Math.max(6, +(safeFontSize * 0.82).toFixed(1))}pt` }}>
                                     {std.date}
                                   </span>
                                 )}
@@ -1094,30 +1197,32 @@ export default function AdvancePrintModal({
                         })}
 
                         {/* Standard Subtotal Row */}
-                        <tr className="bg-slate-100 font-extrabold text-slate-900 border-t-2 border-slate-400">
-                          <td colSpan={3} className={`${densityCellClasses.subtotal} border-r border-slate-300 tracking-wide`}>
-                            {groupingMode === 'none' ? `TOTAL (All Combined - ${group.rows.length} Customers)` : `SUBTOTAL (${group.groupName})`}
+                        <tr className="bg-slate-100 font-extrabold text-slate-900 border-t-2 border-slate-400" style={{ fontSize: `${safeFontSize}pt` }}>
+                          <td colSpan={3} style={{ fontSize: `${safeFontSize}pt` }} className={`${densityCellClasses.subtotal} border-r border-slate-300 tracking-wide`}>
+                            {groupingMode === 'none'
+                              ? `TOTAL (${areaDisplay ? `Area: ${areaDisplay} - ` : ''}${group.rows.length} Customers)`
+                              : `SUBTOTAL (${areaDisplay ? `Area: ${areaDisplay}${groupingMode === 'collector' ? ` - ${group.groupName}` : ''}` : group.groupName})`}
                           </td>
-                          <td className={`${densityCellClasses.subtotal} border-r border-slate-300 text-right text-slate-900`}>
+                          <td style={{ fontSize: `${safeFontSize}pt` }} className={`${densityCellClasses.subtotal} border-r border-slate-300 text-right text-slate-900`}>
                             ৳{groupRent.toLocaleString()}
                           </td>
-                          <td className={`${densityCellClasses.subtotal} border-r border-slate-300 text-right text-rose-700`}>
+                          <td style={{ fontSize: `${safeFontSize}pt` }} className={`${densityCellClasses.subtotal} border-r border-slate-300 text-right text-rose-700`}>
                             ৳{groupDues.toLocaleString()}
                           </td>
-                          <td className={`${densityCellClasses.subtotal} border-r border-slate-300 text-right text-indigo-700`}>
+                          <td style={{ fontSize: `${safeFontSize}pt` }} className={`${densityCellClasses.subtotal} border-r border-slate-300 text-right text-indigo-700`}>
                             {formatCurrency(groupPayable)}
                           </td>
-                          <td className="border-r border-slate-300" />
+                          <td style={{ fontSize: `${safeFontSize}pt` }} className="border-r border-slate-300" />
                         </tr>
                       </tbody>
                     </table>
                   ) : (
                     /* Custom Columns Mode */
-                    <table className="w-full text-left border-collapse">
+                    <table className="w-full text-left border-collapse" style={{ fontSize: `${safeFontSize}pt` }}>
                       <thead>
                         <tr className="bg-slate-200 text-slate-800 uppercase border-b border-slate-300">
                           {selectedColumns.map((col, cIdx) => (
-                            <th key={cIdx} className={`${densityCellClasses.th} border-r border-slate-300 whitespace-nowrap`}>
+                            <th key={cIdx} style={{ fontSize: `${safeFontSize}pt` }} className={`${densityCellClasses.th} border-r border-slate-300 whitespace-nowrap`}>
                               {col}
                             </th>
                           ))}
@@ -1129,9 +1234,9 @@ export default function AdvancePrintModal({
                           const isInactive = st === 'inactive';
 
                           return (
-                            <tr key={rIdx} className={`hover:bg-slate-50 ${isInactive ? 'bg-rose-50/60' : ''}`}>
+                            <tr key={rIdx} className={`hover:bg-slate-50 ${isInactive ? 'bg-rose-50/60' : ''}`} style={{ fontSize: `${safeFontSize}pt` }}>
                               {selectedColumns.map((col, colIdx) => (
-                                <td key={colIdx} className={`${densityCellClasses.td} border-r border-slate-300`}>
+                                <td key={colIdx} style={{ fontSize: `${safeFontSize}pt` }} className={`${densityCellClasses.td} border-r border-slate-300`}>
                                   {r[col] ?? ''}
                                 </td>
                               ))}
@@ -1140,47 +1245,49 @@ export default function AdvancePrintModal({
                         })}
 
                         {/* Custom Subtotal Row */}
-                        <tr className="bg-slate-100 font-extrabold text-slate-900 border-t-2 border-slate-400">
-                          <td colSpan={2} className={`${densityCellClasses.subtotal} border-r border-slate-300`}>
-                            {groupingMode === 'none' ? `TOTAL (All Combined - ${group.rows.length} Customers)` : `SUBTOTAL (${group.groupName})`}
+                        <tr className="bg-slate-100 font-extrabold text-slate-900 border-t-2 border-slate-400" style={{ fontSize: `${safeFontSize}pt` }}>
+                          <td colSpan={2} style={{ fontSize: `${safeFontSize}pt` }} className={`${densityCellClasses.subtotal} border-r border-slate-300`}>
+                            {groupingMode === 'none'
+                              ? `TOTAL (${areaDisplay ? `Area: ${areaDisplay} - ` : ''}${group.rows.length} Customers)`
+                              : `SUBTOTAL (${areaDisplay ? `Area: ${areaDisplay}${groupingMode === 'collector' ? ` - ${group.groupName}` : ''}` : group.groupName})`}
                           </td>
                           {selectedColumns.slice(1).map((col, colIdx) => {
                             if (col === rentHeaderKey) {
                               return (
-                                <td key={colIdx} className={`${densityCellClasses.subtotal} border-r border-slate-300 text-slate-900`}>
+                                <td key={colIdx} style={{ fontSize: `${safeFontSize}pt` }} className={`${densityCellClasses.subtotal} border-r border-slate-300 text-slate-900`}>
                                   ৳{groupRent.toLocaleString()}
                                 </td>
                               );
                             }
                             if (col === duesHeaderKey) {
                               return (
-                                <td key={colIdx} className={`${densityCellClasses.subtotal} border-r border-slate-300 text-rose-700`}>
+                                <td key={colIdx} style={{ fontSize: `${safeFontSize}pt` }} className={`${densityCellClasses.subtotal} border-r border-slate-300 text-rose-700`}>
                                   ৳{groupDues.toLocaleString()}
                                 </td>
                               );
                             }
                             if (col === advanceHeaderKey) {
                               return (
-                                <td key={colIdx} className={`${densityCellClasses.subtotal} border-r border-slate-300 text-amber-600`}>
+                                <td key={colIdx} style={{ fontSize: `${safeFontSize}pt` }} className={`${densityCellClasses.subtotal} border-r border-slate-300 text-amber-600`}>
                                   ৳{groupAdvance.toLocaleString()}
                                 </td>
                               );
                             }
                             if (col === discountHeaderKey) {
                               return (
-                                <td key={colIdx} className={`${densityCellClasses.subtotal} border-r border-slate-300 text-purple-600`}>
+                                <td key={colIdx} style={{ fontSize: `${safeFontSize}pt` }} className={`${densityCellClasses.subtotal} border-r border-slate-300 text-purple-600`}>
                                   ৳{groupDiscount.toLocaleString()}
                                 </td>
                               );
                             }
                             if (col === totalHeaderKey) {
                               return (
-                                <td key={colIdx} className={`${densityCellClasses.subtotal} border-r border-slate-300 text-indigo-700`}>
+                                <td key={colIdx} style={{ fontSize: `${safeFontSize}pt` }} className={`${densityCellClasses.subtotal} border-r border-slate-300 text-indigo-700`}>
                                   {formatCurrency(groupPayable)}
                                 </td>
                               );
                             }
-                            return <td key={colIdx} className="border-r border-slate-300" />;
+                            return <td key={colIdx} style={{ fontSize: `${safeFontSize}pt` }} className="border-r border-slate-300" />;
                           })}
                         </tr>
                       </tbody>
@@ -1811,6 +1918,125 @@ export default function AdvancePrintModal({
                     </div>
                   </div>
 
+                  {/* List / Table Font Size Control (Custom Font Size Option) */}
+                  <div className="pt-2 border-t border-slate-800/60 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] text-slate-300 font-bold flex items-center space-x-1.5">
+                        <Type className="w-3.5 h-3.5 text-amber-400" />
+                        <span>List Font Size (ফন্ট সাইজ):</span>
+                      </label>
+                      <div className="flex items-center space-x-1.5">
+                        <span className="px-2 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded-md text-[11px] font-mono font-bold">
+                          {safeFontSize} pt
+                        </span>
+                        {safeFontSize !== 8.5 && (
+                          <button
+                            type="button"
+                            onClick={() => handleFontSizeChange(8.5)}
+                            className="p-1 text-slate-400 hover:text-amber-400 transition cursor-pointer"
+                            title="Reset to default 8.5 pt"
+                          >
+                            <RotateCcw className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Quick Presets */}
+                    <div className="grid grid-cols-5 gap-1">
+                      {[
+                        { label: '8 pt', size: 8, title: 'Mini' },
+                        { label: '8.5 pt', size: 8.5, title: 'Default' },
+                        { label: '9.5 pt', size: 9.5, title: 'Medium' },
+                        { label: '10.5 pt', size: 10.5, title: 'Large' },
+                        { label: '12 pt', size: 12, title: 'XL' },
+                      ].map((preset) => (
+                        <button
+                          key={preset.size}
+                          type="button"
+                          onClick={() => handleFontSizeChange(preset.size)}
+                          className={`py-1 rounded-lg text-[10px] font-bold transition cursor-pointer border ${
+                            safeFontSize === preset.size
+                              ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-sm font-black'
+                              : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white hover:border-slate-700'
+                          }`}
+                          title={preset.title}
+                        >
+                          {preset.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Custom Font Size Stepper & Slider */}
+                    <div className="p-2 bg-slate-950 rounded-xl border border-slate-800 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[10px] text-slate-400 font-semibold">Custom Size:</span>
+                        <div className="flex items-center space-x-1">
+                          <button
+                            type="button"
+                            onClick={() => handleFontSizeChange(Math.max(5, +(Math.round((safeFontSize - 0.5) * 10) / 10).toFixed(1)))}
+                            className="w-6 h-6 flex items-center justify-center rounded-lg bg-slate-900 border border-slate-700 text-slate-300 hover:text-white hover:bg-slate-800 font-bold transition cursor-pointer"
+                            title="Decrease 0.5 pt"
+                          >
+                            <Minus className="w-3 h-3" />
+                          </button>
+                          
+                          <div className="relative flex items-center">
+                            <input
+                              type="number"
+                              min="5"
+                              max="24"
+                              step="0.5"
+                              value={listFontSize}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setListFontSize(val);
+                                const num = parseFloat(val);
+                                if (!isNaN(num) && num >= 5 && num <= 24) {
+                                  try {
+                                    localStorage.setItem('advance_print_font_size', String(num));
+                                  } catch (err) {}
+                                }
+                              }}
+                              onBlur={() => {
+                                const num = parseFloat(listFontSize);
+                                if (isNaN(num) || num < 5) handleFontSizeChange(8.5);
+                                else if (num > 24) handleFontSizeChange(24);
+                                else handleFontSizeChange(+(Math.round(num * 10) / 10).toFixed(1));
+                              }}
+                              className="w-14 text-center py-0.5 px-1 bg-slate-900 border border-slate-700 rounded-lg text-amber-300 font-mono text-xs font-bold focus:outline-none focus:border-amber-500"
+                            />
+                            <span className="ml-1 text-[10px] text-slate-500 font-mono">pt</span>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => handleFontSizeChange(Math.min(24, +(Math.round((safeFontSize + 0.5) * 10) / 10).toFixed(1)))}
+                            className="w-6 h-6 flex items-center justify-center rounded-lg bg-slate-900 border border-slate-700 text-slate-300 hover:text-white hover:bg-slate-800 font-bold transition cursor-pointer"
+                            title="Increase 0.5 pt"
+                          >
+                            <Plus className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Smooth Slider */}
+                      <div className="flex items-center space-x-2 pt-0.5">
+                        <span className="text-[9px] text-slate-500">6pt</span>
+                        <input
+                          type="range"
+                          min="6"
+                          max="18"
+                          step="0.5"
+                          value={safeFontSize}
+                          onChange={(e) => handleFontSizeChange(parseFloat(e.target.value))}
+                          className="flex-1 h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                        />
+                        <span className="text-[9px] text-slate-500">18pt</span>
+                      </div>
+                    </div>
+                  </div>
+
                   <label className="flex items-center space-x-2 text-slate-300 cursor-pointer pt-1">
                     <input
                       type="checkbox"
@@ -1820,6 +2046,24 @@ export default function AdvancePrintModal({
                     />
                     <span>Include Total Summary Box at Header</span>
                   </label>
+
+                  <label className="flex items-center space-x-2 text-slate-300 cursor-pointer pt-1">
+                    <input
+                      type="checkbox"
+                      checked={showPageNumbers}
+                      onChange={(e) => handleTogglePageNumbers(e.target.checked)}
+                      className="rounded border-slate-700 bg-slate-900 text-amber-500 focus:ring-amber-500"
+                    />
+                    <span className="flex items-center space-x-1.5">
+                      <span>Automatic Print Page Numbers</span>
+                      <span className="px-1.5 py-0.2 bg-emerald-500/20 text-emerald-300 text-[10px] rounded font-mono font-bold">
+                        Page 1, 2, 3...
+                      </span>
+                    </span>
+                  </label>
+                  <div className="text-[10px] text-slate-400 pl-6">
+                    প্রিন্ট করার সময় কাগজের সাইজ অনুযায়ী প্রতিটি পেজে স্বয়ংক্রিয়ভাবে পেজ নম্বর (Page 1, Page 2...) প্রিন্ট হবে।
+                  </div>
                 </div>
 
               </div>
@@ -1854,7 +2098,7 @@ export default function AdvancePrintModal({
 
       {/* 2. Pure Print Document Portal (Hidden on screen, Visible ONLY during window.print()) */}
       {createPortal(
-        <div id="printable-advance-document-portal">
+        <div id="printable-advance-document-portal" style={{ '--table-font-size': `${safeFontSize}pt`, fontSize: `${safeFontSize}pt` }}>
           <style>{`
             @media screen {
               #printable-advance-document-portal {
@@ -1864,10 +2108,25 @@ export default function AdvancePrintModal({
             @media print {
               @page {
                 size: ${orientation === 'landscape' ? 'landscape' : 'portrait'};
-                margin-top: 10mm;
-                margin-bottom: 20mm; /* Dedicated generous gap for footer page numbers */
-                margin-left: 12mm;  /* Exact equal left margin */
-                margin-right: 12mm; /* Exact equal right margin */
+                margin-top: 8mm;
+                margin-bottom: 20mm;
+                margin-left: 10mm;
+                margin-right: 10mm;
+                ${showPageNumbers ? `
+                  @bottom-right {
+                    content: "Page " counter(page);
+                    font-family: 'Noto Sans Bengali', 'Noto Sans', sans-serif;
+                    font-size: 9pt;
+                    font-weight: 700;
+                    color: #0f172a;
+                  }
+                  @bottom-left {
+                    content: "Chittagong Communications • " "${selectedAreas.length > 0 ? `Area: ${selectedAreas.join(', ')} • ` : ''}${fileName}";
+                    font-family: 'Noto Sans Bengali', 'Noto Sans', sans-serif;
+                    font-size: 8pt;
+                    color: #64748b;
+                  }
+                ` : ''}
               }
               html, body {
                 width: 100% !important;
@@ -1930,16 +2189,21 @@ export default function AdvancePrintModal({
                 background-color: #f1f5f9 !important;
                 color: #0f172a !important;
                 border: 1.5px solid #334155 !important;
-                padding: 3px 6px !important;
+                padding: ${rowDensity === 'ultra-compact' ? '2px 4px' : rowDensity === 'compact' ? '3px 6px' : '4px 8px'} !important;
                 font-weight: 800 !important;
-                font-size: 8.5pt !important;
+                font-size: ${safeFontSize}pt !important;
+                line-height: 1.2 !important;
               }
               #printable-advance-document-portal td {
                 display: table-cell !important;
                 color: #0f172a !important;
                 border: 1px solid #475569 !important;
-                padding: 2.5px 6px !important;
-                font-size: 8.5pt !important;
+                padding: ${rowDensity === 'ultra-compact' ? '1.5px 4px' : rowDensity === 'compact' ? '2.5px 6px' : '3.5px 8px'} !important;
+                font-size: ${safeFontSize}pt !important;
+                line-height: 1.2 !important;
+              }
+              #printable-advance-document-portal .date-badge-text {
+                font-size: ${Math.max(6, (safeFontSize * 0.82)).toFixed(1)}pt !important;
               }
               #printable-advance-document-portal .print-page-break {
                 page-break-before: always !important;
@@ -1960,7 +2224,7 @@ export default function AdvancePrintModal({
               }
               #printable-advance-document-portal .print-footer-gap {
                 display: block !important;
-                height: 12mm !important;
+                height: 16mm !important;
                 width: 100% !important;
                 clear: both !important;
               }
