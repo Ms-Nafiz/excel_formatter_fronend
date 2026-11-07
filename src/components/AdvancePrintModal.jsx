@@ -97,6 +97,27 @@ export default function AdvancePrintModal({
     } catch (e) {}
   };
   const [rowDensity, setRowDensity] = useState('ultra-compact'); // 'ultra-compact' | 'compact' | 'normal'
+  const [dbBuildingList, setDbBuildingList] = useState([]);
+  const [dbAreaList, setDbAreaList] = useState([]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    api.get('/locations/buildings')
+      .then((res) => {
+        const list = Array.isArray(res.data) ? res.data : (res.data?.buildings || []);
+        const names = list.map((b) => (typeof b === 'string' ? b : (b.name || ''))).filter(Boolean);
+        if (names.length > 0) setDbBuildingList(names);
+      })
+      .catch(() => {});
+
+    api.get('/locations/areas')
+      .then((res) => {
+        const list = Array.isArray(res.data) ? res.data : (res.data?.areas || []);
+        const names = list.map((a) => (typeof a === 'string' ? a : (a.name || ''))).filter(Boolean);
+        if (names.length > 0) setDbAreaList(names);
+      })
+      .catch(() => {});
+  }, [isOpen]);
   
   // Custom List / Table Font Size in Points (pt) with LocalStorage persistence
   const [listFontSize, setListFontSize] = useState(() => {
@@ -183,7 +204,7 @@ export default function AdvancePrintModal({
     // 1. Instant load from in-memory cache if available (0ms delay)
     if (fileId && fileDataCache.has(fileId)) {
       const cached = fileDataCache.get(fileId);
-      if (cached.rows && cached.rows.length > 0 && cached.rows[0]._db_previous_dues !== undefined && cached.rows[0]._db_advance !== undefined) {
+      if (cached.rows && cached.rows.length > 0 && cached.rows[0]._db_previous_dues !== undefined && cached.rows[0]._db_advance !== undefined && cached.rows[0]._db_building_name !== undefined) {
         setHeaders(cached.headers);
         setRows(cached.rows);
         setSelectedColumns(cached.headers);
@@ -374,6 +395,25 @@ export default function AdvancePrintModal({
     });
     return Array.from(list).sort();
   }, [rows, selectedCollectors, collectorHeaderKey, areaHeaderKey]);
+
+  // Comprehensive unique areas & buildings list for address cleaning and building resolution
+  const allKnownAreas = useMemo(() => {
+    const set = new Set(dbAreaList);
+    rows.forEach((r) => {
+      const a = String(r[areaHeaderKey] || r['Area Name'] || r['area_name'] || r['Area'] || r['area'] || r._db_area_name || '').trim();
+      if (a && a.toLowerCase() !== 'n/a' && a !== '-') set.add(a);
+    });
+    return Array.from(set).sort((a, b) => b.length - a.length);
+  }, [rows, areaHeaderKey, dbAreaList]);
+
+  const allKnownBuildings = useMemo(() => {
+    const set = new Set(dbBuildingList);
+    rows.forEach((r) => {
+      const b = String(r[buildingHeaderKey] || r['Building Name'] || r['building_name'] || r['Building'] || r['building'] || r._db_building_name || '').trim();
+      if (b && b.toLowerCase() !== 'n/a' && b !== '-') set.add(b);
+    });
+    return Array.from(set).sort((a, b) => b.length - a.length);
+  }, [rows, buildingHeaderKey, dbBuildingList]);
 
   // Row counts per area under current collector filter
   const areaRowCounts = useMemo(() => {
@@ -573,10 +613,10 @@ export default function AdvancePrintModal({
   // Extract sortable value from row for a given column key
   const getSortableValue = (row, key, idx) => {
     if (key === 'area') {
-      return String(row[areaHeaderKey] || '').trim();
+      return String(row[areaHeaderKey] || row['Area Name'] || row['area_name'] || row['Area'] || row['Location'] || '').trim();
     }
     if (key === 'building') {
-      return String(row[buildingHeaderKey] || '').trim();
+      return String(row[buildingHeaderKey] || row['Building Name'] || row['building_name'] || row['Building'] || row['House/Building'] || '').trim();
     }
     if (key === 'house') {
       return String(row[houseHeaderKey] || '').trim();
@@ -753,11 +793,200 @@ export default function AdvancePrintModal({
     const idVal = r['Customer ID'] || r['ID'] || r['Customer Code'] || r['Code'] || r['SL'] || r['_row_index'] || (idx + 1);
     const nameVal = r['Customer Name'] || r['Name'] || r['Client Name'] || 'N/A';
     
-    // Formatted Address (Add / Add Name)
-    let addVal = r['Add Name'] || r['Add'] || r['Add Combined'] || r['Address'] || r['Full Address'] || '';
-    if (!addVal) {
-      const parts = [r[areaHeaderKey], r[buildingHeaderKey], r[houseHeaderKey], r[flatHeaderKey]].filter(Boolean);
-      addVal = parts.join(', ') || 'N/A';
+    // 1. Extract Building Name
+    const bldgCandidates = [
+      r[buildingHeaderKey],
+      r['Building Name'],
+      r['building_name'],
+      r['Building'],
+      r['building'],
+      r['House/Building'],
+      r['house/building'],
+      r['House Name'],
+      r['house_name'],
+      r._db_building_name,
+    ];
+    let bldgVal = '';
+    for (const c of bldgCandidates) {
+      if (c !== undefined && c !== null) {
+        const s = String(c).trim();
+        if (s && s.toLowerCase() !== 'n/a' && s !== '-' && s !== 'null' && s !== 'undefined') {
+          bldgVal = s;
+          break;
+        }
+      }
+    }
+
+    // 2. Extract Area Name
+    const areaCandidates = [
+      r[areaHeaderKey],
+      r['Area Name'],
+      r['area_name'],
+      r['Area'],
+      r['area'],
+      r['Location'],
+      r['location'],
+      r['Zone'],
+      r['zone'],
+      r._db_area_name,
+    ];
+    let areaVal = '';
+    for (const c of areaCandidates) {
+      if (c !== undefined && c !== null) {
+        const s = String(c).trim();
+        if (s && s.toLowerCase() !== 'n/a' && s !== '-' && s !== 'null' && s !== 'undefined') {
+          areaVal = s;
+          break;
+        }
+      }
+    }
+
+    let rawAdd = String(
+      r['Add Name'] ||
+      r['Add'] ||
+      r['Add Combined'] ||
+      r._db_add_combined ||
+      r['Address'] ||
+      r['Full Address'] ||
+      ''
+    ).trim();
+    if (rawAdd.toLowerCase() === 'n/a' || rawAdd === '-') rawAdd = '';
+
+    // 3. If bldgVal is not explicitly set, search raw address for known buildings
+    if (!bldgVal && allKnownBuildings && allKnownBuildings.length > 0) {
+      const searchStr = `${rawAdd} ${String(r['Address'] || '')}`;
+      for (const b of allKnownBuildings) {
+        if (b && searchStr.toLowerCase().includes(b.toLowerCase())) {
+          bldgVal = b;
+          break;
+        }
+      }
+    }
+
+    // 4. Also check if House No contains a building name keyword
+    let hVal = String(r[houseHeaderKey] || r['House No'] || r['house_no'] || r._db_house_no || '').trim();
+    if (hVal.toLowerCase() === 'n/a' || hVal === '-' || hVal === 'null') hVal = '';
+    let fVal = String(r[flatHeaderKey] || r['Flat No'] || r['flat_no'] || r._db_flat_no || '').trim();
+    if (fVal.toLowerCase() === 'n/a' || fVal === '-' || fVal === 'null') fVal = '';
+
+    if (!bldgVal && hVal && /(?:building|buliding|qtr|nibash|complex|mess|tower|villa|vila|bhaban|bhobon|bari|branch|agrajatra|agrodhara|agrojatra)/i.test(hVal)) {
+      bldgVal = hVal;
+    }
+
+    // Collect all area names that could appear in address or building strings
+    const areasToClean = Array.from(new Set([areaVal, ...allKnownAreas].filter(Boolean))).sort((a, b) => b.length - a.length);
+
+    // Validate bldgVal: if bldgVal equals any known area name, it was misclassified
+    if (bldgVal) {
+      const isArea = areasToClean.some((a) => a && a.toLowerCase() === bldgVal.toLowerCase());
+      if (isArea) {
+        bldgVal = '';
+      }
+    }
+
+    // Strip area names from bldgVal if attached (e.g. "Padma, AHQ" -> "Padma", "Ahq Office" -> "Office")
+    if (bldgVal) {
+      for (const a of areasToClean) {
+        if (!a || a.length < 2) continue;
+        const esc = a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const re = new RegExp(`(?:\\s*[,|\\-\\/]?\\s*\\b${esc}\\b\\s*|\\s*\\b${esc}\\b\\s*[,|\\-\\/]?)`, 'gi');
+        bldgVal = bldgVal.replace(re, ' ');
+      }
+      bldgVal = bldgVal.replace(/\s+/g, ' ').trim().replace(/^[,|\-\/\s]+|[,|\-\/\s]+$/g, '');
+      if (!bldgVal || bldgVal.toLowerCase() === 'n/a') {
+        bldgVal = '';
+      }
+    }
+
+    // Clean house and flat: remove area names if present
+    if (hVal) {
+      for (const a of areasToClean) {
+        if (a && a.toLowerCase() === hVal.toLowerCase()) {
+          hVal = '';
+          break;
+        }
+        if (!a || a.length < 2) continue;
+        const esc = a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const re = new RegExp(`(?:\\s*[,|\\-\\/]?\\s*\\b${esc}\\b\\s*|\\s*\\b${esc}\\b\\s*[,|\\-\\/]?)`, 'gi');
+        hVal = hVal.replace(re, ' ');
+        hVal = hVal.replace(new RegExp(`\\b${esc}(?=[0-9A-Za-z])`, 'gi'), '');
+      }
+      hVal = hVal.replace(/\s+/g, ' ').trim().replace(/^[,|\-\/\s]+|[,|\-\/\s]+$/g, '');
+    }
+    if (fVal) {
+      for (const a of areasToClean) {
+        if (a && a.toLowerCase() === fVal.toLowerCase()) {
+          fVal = '';
+          break;
+        }
+        if (!a || a.length < 2) continue;
+        const esc = a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const re = new RegExp(`(?:\\s*[,|\\-\\/]?\\s*\\b${esc}\\b\\s*|\\s*\\b${esc}\\b\\s*[,|\\-\\/]?)`, 'gi');
+        fVal = fVal.replace(re, ' ');
+        fVal = fVal.replace(new RegExp(`\\b${esc}(?=[0-9A-Za-z])`, 'gi'), '');
+      }
+      fVal = fVal.replace(/\s+/g, ' ').trim().replace(/^[,|\-\/\s]+|[,|\-\/\s]+$/g, '');
+    }
+
+    // Construct house-flat (hf)
+    let hf = '';
+    if (hVal && fVal) {
+      if (hVal.toLowerCase() === fVal.toLowerCase()) {
+        hf = hVal;
+      } else {
+        hf = `${hVal}-${fVal}`;
+      }
+    } else if (hVal) {
+      hf = hVal;
+    } else if (fVal) {
+      hf = fVal;
+    }
+
+    // Formatted Address (Add / Add Name):
+    // Format: house-flat, (building name if building exists). If no building, just house-flat.
+    // Never include area name inside the address!
+    let addVal = '';
+    if (bldgVal) {
+      if (hf) {
+        if (hf.toLowerCase() === bldgVal.toLowerCase()) {
+          addVal = bldgVal;
+        } else if (hf.toLowerCase().includes(bldgVal.toLowerCase())) {
+          addVal = hf;
+        } else if (hVal.toLowerCase() === bldgVal.toLowerCase() && fVal) {
+          addVal = `${fVal}, ${bldgVal}`;
+        } else {
+          addVal = `${hf}, ${bldgVal}`;
+        }
+      } else {
+        addVal = bldgVal;
+      }
+    } else {
+      if (hf) {
+        addVal = hf;
+      } else {
+        let cleaned = rawAdd;
+        for (const a of areasToClean) {
+          if (!a || a.length < 2) continue;
+          const esc = a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const re = new RegExp(`(?:\\s*[,|\\-\\/]?\\s*\\b${esc}\\b\\s*|\\s*\\b${esc}\\b\\s*[,|\\-\\/]?)`, 'gi');
+          cleaned = cleaned.replace(re, ' ');
+        }
+        cleaned = cleaned.replace(/\s+/g, ' ').trim().replace(/^[,|\-\/\s]+|[,|\-\/\s]+$/g, '');
+        addVal = cleaned;
+      }
+    }
+
+    // Final safety stripping for area names from addVal
+    for (const a of areasToClean) {
+      if (!a || a.length < 2) continue;
+      const esc = a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const re = new RegExp(`(?:\\s*[,|\\-\\/]?\\s*\\b${esc}\\b\\s*|\\s*\\b${esc}\\b\\s*[,|\\-\\/]?)`, 'gi');
+      addVal = addVal.replace(re, ' ');
+    }
+    addVal = addVal.replace(/\s+/g, ' ').trim().replace(/^[,|\-\/\s]+|[,|\-\/\s]+$/g, '');
+
+    if (!addVal || addVal.toLowerCase() === 'n/a' || (areaVal && addVal.toLowerCase() === areaVal.toLowerCase())) {
+      addVal = '—';
     }
 
     const rawRent = r._db_monthly_rent !== undefined
