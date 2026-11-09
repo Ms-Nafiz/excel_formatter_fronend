@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import api from '../services/api';
+import EasyEBillingCustomerModal from './EasyEBillingCustomerModal';
 import {
   History,
   Calendar,
@@ -22,7 +23,16 @@ import {
   ChevronDown,
   Sparkles,
   AlertCircle,
-  Tag
+  Tag,
+  Cloud,
+  CloudLightning,
+  Send,
+  Check,
+  Square,
+  CheckSquare,
+  ExternalLink,
+  AlertTriangle,
+  Zap
 } from 'lucide-react';
 
 export default function CustomerUpdateReportView({ refreshTrigger, onNavigateToEditor }) {
@@ -33,8 +43,18 @@ export default function CustomerUpdateReportView({ refreshTrigger, onNavigateToE
   const [filterBy, setFilterBy] = useState('update_month'); // 'update_month' | 'billing_month' | 'all'
   const [latestOnly, setLatestOnly] = useState(true); // Default: show only latest change per customer field
   const [selectedField, setSelectedField] = useState('all');
+  const [syncStatusFilter, setSyncStatusFilter] = useState('all'); // 'all' | 'pending' | 'synced' | 'failed'
   const [searchQuery, setSearchQuery] = useState('');
   
+  // EasyEBilling Sync State
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [syncingId, setSyncingId] = useState(null);
+  const [bulkSyncing, setBulkSyncing] = useState(false);
+  const [testingConn, setTestingConn] = useState(false);
+  const [billingStatus, setBillingStatus] = useState(null); // null | 'connected' | 'error'
+  const [activeBillingCustomer, setActiveBillingCustomer] = useState(null);
+  const [syncNotice, setSyncNotice] = useState(null);
+
   // Data state
   const [logs, setLogs] = useState([]);
   const [stats, setStats] = useState(null);
@@ -59,6 +79,24 @@ export default function CustomerUpdateReportView({ refreshTrigger, onNavigateToE
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Check EasyEBilling connection status on mount
+  useEffect(() => {
+    checkBillingStatusSilent();
+  }, []);
+
+  const checkBillingStatusSilent = async () => {
+    try {
+      const res = await api.get('/billing/status');
+      if (res.data?.success) {
+        setBillingStatus('connected');
+      } else {
+        setBillingStatus('error');
+      }
+    } catch (e) {
+      setBillingStatus('error');
+    }
+  };
+
   // 1. Fetch available months on mount or refresh
   useEffect(() => {
     fetchMonths();
@@ -82,10 +120,10 @@ export default function CustomerUpdateReportView({ refreshTrigger, onNavigateToE
     }
   };
 
-  // 2. Fetch report data whenever filters, latestOnly, or pagination change
+  // 2. Fetch report data whenever filters, latestOnly, syncStatusFilter, or pagination change
   useEffect(() => {
     fetchReport();
-  }, [selectedMonth, filterBy, selectedField, latestOnly, currentPage, pageSize, refreshTrigger]);
+  }, [selectedMonth, filterBy, selectedField, syncStatusFilter, latestOnly, currentPage, pageSize, refreshTrigger]);
 
   // Debounced search query
   useEffect(() => {
@@ -109,6 +147,7 @@ export default function CustomerUpdateReportView({ refreshTrigger, onNavigateToE
           month: selectedMonth,
           filter_by: filterBy,
           field: selectedField,
+          sync_status: syncStatusFilter !== 'all' ? syncStatusFilter : undefined,
           search: searchQuery,
           latest_only: latestOnly,
           page: currentPage,
@@ -125,6 +164,132 @@ export default function CustomerUpdateReportView({ refreshTrigger, onNavigateToE
       setError(err.response?.data?.message || 'Failed to fetch customer update audit report.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // EasyEBilling Actions
+  const handleTestConnection = async () => {
+    setTestingConn(true);
+    setSyncNotice(null);
+    try {
+      const res = await api.get('/billing/status');
+      if (res.data?.success) {
+        setBillingStatus('connected');
+        setSyncNotice({ type: 'success', message: 'EasyEBilling connection verified! Credentials valid & active on catv.easyebilling.com.' });
+      } else {
+        setBillingStatus('error');
+        setSyncNotice({ type: 'error', message: res.data?.message || 'Failed to authenticate with EasyEBilling.' });
+      }
+    } catch (err) {
+      setBillingStatus('error');
+      setSyncNotice({ type: 'error', message: err.response?.data?.message || err.message || 'EasyEBilling connection test failed.' });
+    } finally {
+      setTestingConn(false);
+    }
+  };
+
+  const handleSyncSingle = async (item) => {
+    setSyncingId(item.id);
+    setSyncNotice(null);
+    try {
+      const res = await api.post(`/billing/sync-audit-log/${item.id}`);
+      if (res.data?.success) {
+        setSyncNotice({ type: 'success', message: res.data.message || `Customer ${item.customer_id} synced to EasyEBilling!` });
+        setLogs(prev => prev.map(l => l.id === item.id ? {
+          ...l,
+          billing_sync_status: 'synced',
+          billing_sync_error: null,
+          billing_synced_at: new Date().toISOString(),
+          billing_pk: res.data.log?.billing_pk || l.billing_pk
+        } : l));
+        if (stats) {
+          setStats(prev => ({
+            ...prev,
+            pending_sync: Math.max(0, (prev.pending_sync || 0) - 1),
+            synced_count: (prev.synced_count || 0) + 1,
+          }));
+        }
+      } else {
+        setSyncNotice({ type: 'error', message: res.data?.message || 'Sync failed.' });
+        setLogs(prev => prev.map(l => l.id === item.id ? { ...l, billing_sync_status: 'failed', billing_sync_error: res.data?.message } : l));
+      }
+    } catch (err) {
+      const errMsg = err.response?.data?.message || err.message || 'Sync request failed.';
+      setSyncNotice({ type: 'error', message: errMsg });
+      setLogs(prev => prev.map(l => l.id === item.id ? { ...l, billing_sync_status: 'failed', billing_sync_error: errMsg } : l));
+    } finally {
+      setSyncingId(null);
+    }
+  };
+
+  const handleSyncSelected = async () => {
+    if (selectedIds.length === 0) return;
+    setBulkSyncing(true);
+    setSyncNotice(null);
+    try {
+      const res = await api.post('/billing/sync-audit-bulk', {
+        ids: selectedIds,
+      });
+
+      if (res.data?.success) {
+        setSyncNotice({
+          type: 'success',
+          message: res.data.message || `Successfully processed ${selectedIds.length} logs with EasyEBilling!`
+        });
+        setSelectedIds([]);
+        fetchReport();
+      } else {
+        setSyncNotice({ type: 'error', message: res.data?.message || 'Bulk sync encountered errors.' });
+        fetchReport();
+      }
+    } catch (err) {
+      setSyncNotice({ type: 'error', message: err.response?.data?.message || err.message || 'Bulk sync failed.' });
+    } finally {
+      setBulkSyncing(false);
+    }
+  };
+
+  const handleSyncAllPending = async () => {
+    if (!window.confirm(`Are you sure you want to push all pending updates for ${selectedMonth === 'all' ? 'all months' : selectedMonth} to EasyEBilling?`)) {
+      return;
+    }
+    setBulkSyncing(true);
+    setSyncNotice(null);
+    try {
+      const res = await api.post('/billing/sync-audit-bulk', {
+        all_pending: true,
+        month: selectedMonth,
+        filter_by: filterBy,
+        field: selectedField,
+      });
+
+      if (res.data?.success) {
+        setSyncNotice({
+          type: 'success',
+          message: res.data.message || 'All pending updates have been processed with EasyEBilling!'
+        });
+        setSelectedIds([]);
+        fetchReport();
+      } else {
+        setSyncNotice({ type: 'error', message: res.data?.message || 'Sync all pending finished with some issues.' });
+        fetchReport();
+      }
+    } catch (err) {
+      setSyncNotice({ type: 'error', message: err.response?.data?.message || err.message || 'Sync all failed.' });
+    } finally {
+      setBulkSyncing(false);
+    }
+  };
+
+  const toggleSelectRow = (id) => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.length === logs.length && logs.length > 0) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(logs.map(l => l.id));
     }
   };
 
@@ -369,7 +534,7 @@ export default function CustomerUpdateReportView({ refreshTrigger, onNavigateToE
       `}</style>
 
       {/* 1. Top Page Banner & Action Buttons */}
-      <div className="glass-card p-6 rounded-2xl border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4 no-print">
+      <div className="glass-card p-6 rounded-2xl border border-slate-800 flex flex-col lg:flex-row lg:items-center justify-between gap-4 no-print">
         <div className="flex items-center space-x-3.5">
           <div className="p-3 rounded-2xl bg-gradient-to-br from-amber-500 to-rose-600 text-white shadow-lg shadow-amber-500/20">
             <History className="w-7 h-7" />
@@ -378,21 +543,69 @@ export default function CustomerUpdateReportView({ refreshTrigger, onNavigateToE
             <h2 className="text-xl font-black text-white tracking-tight flex items-center space-x-2">
               <span>Customer Update Audit & Change Logs</span>
               <span className="px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 text-xs font-bold">
-                Old vs New History
+                EasyEBilling Cloud Sync
               </span>
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
-              Select a month to inspect all customer field edits, old values, new values, editors, and timestamps with Excel export.
+              Inspect all customer edits, compare old vs new values, and push updates directly to EasyEBilling (catv.easyebilling.com).
             </p>
           </div>
         </div>
 
-        <div className="flex items-center space-x-2.5">
+        <div className="flex flex-wrap items-center gap-2.5">
+          
+          {/* EasyEBilling Connection Status Button */}
+          <button
+            onClick={handleTestConnection}
+            disabled={testingConn}
+            className={`px-3 py-2 rounded-xl border text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer ${
+              billingStatus === 'connected'
+                ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/25'
+                : billingStatus === 'error'
+                ? 'bg-rose-500/15 text-rose-300 border-rose-500/30 hover:bg-rose-500/25'
+                : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+            }`}
+            title="Click to test EasyEBilling system connection & login"
+          >
+            <Cloud className={`w-3.5 h-3.5 ${billingStatus === 'connected' ? 'text-emerald-400' : 'text-amber-400'}`} />
+            <span>
+              {testingConn ? 'Testing...' : billingStatus === 'connected' ? 'Billing: Online' : 'Billing: Test'}
+            </span>
+          </button>
+
+          {/* Sync Selected Rows Button */}
+          {selectedIds.length > 0 && (
+            <button
+              onClick={handleSyncSelected}
+              disabled={bulkSyncing}
+              className="flex items-center space-x-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:opacity-90 disabled:opacity-40 text-slate-950 text-xs font-black shadow-lg shadow-amber-500/20 transition cursor-pointer animate-pulse"
+            >
+              <Zap className={`w-4 h-4 ${bulkSyncing ? 'animate-spin' : ''}`} />
+              <span>{bulkSyncing ? 'Syncing...' : `Sync Selected (${selectedIds.length}) to EasyEBilling`}</span>
+            </button>
+          )}
+
+          {/* Sync All Pending Button */}
+          <button
+            onClick={handleSyncAllPending}
+            disabled={bulkSyncing || (stats && stats.pending_sync === 0)}
+            className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold transition cursor-pointer disabled:opacity-30 disabled:hover:bg-amber-500/20"
+            title="Push all pending updates for this filter directly to EasyEBilling"
+          >
+            <Send className={`w-3.5 h-3.5 ${bulkSyncing ? 'animate-bounce' : ''}`} />
+            <span>Sync All Pending</span>
+            {stats && typeof stats.pending_sync === 'number' && stats.pending_sync > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full bg-amber-500 text-slate-950 text-[10px] font-black">
+                {stats.pending_sync}
+              </span>
+            )}
+          </button>
+
           {/* Refresh Button */}
           <button
             onClick={fetchReport}
             disabled={loading}
-            className="flex items-center space-x-2 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700 transition cursor-pointer"
+            className="flex items-center space-x-2 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700 transition cursor-pointer"
             title="Refresh logs"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-amber-400' : ''}`} />
@@ -405,11 +618,11 @@ export default function CustomerUpdateReportView({ refreshTrigger, onNavigateToE
               <button
                 onClick={() => handleExportExcel(true)}
                 disabled={exporting || loading || totalCount === 0}
-                className="flex items-center space-x-2 px-4 py-2 rounded-l-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:hover:bg-emerald-600 text-white text-xs font-bold transition cursor-pointer"
+                className="flex items-center space-x-2 px-3.5 py-2 rounded-l-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:hover:bg-emerald-600 text-white text-xs font-bold transition cursor-pointer"
                 title="Export entire month update logs to Excel"
               >
                 <FileSpreadsheet className={`w-4 h-4 ${exporting ? 'animate-bounce' : ''}`} />
-                <span>{exporting ? 'Exporting...' : 'Export Excel'}</span>
+                <span>{exporting ? 'Exporting...' : 'Export'}</span>
                 {totalCount > 0 && (
                   <span className="ml-1 px-1.5 py-0.5 rounded-md bg-emerald-700/80 text-[10px] font-mono text-emerald-100">
                     {totalCount}
@@ -420,7 +633,7 @@ export default function CustomerUpdateReportView({ refreshTrigger, onNavigateToE
               <button
                 onClick={() => setShowExportMenu(prev => !prev)}
                 disabled={exporting || loading || totalCount === 0}
-                className="px-2.5 py-2 rounded-r-xl bg-emerald-700 hover:bg-emerald-600 disabled:opacity-40 border-l border-emerald-500/40 text-white transition cursor-pointer"
+                className="px-2 py-2 rounded-r-xl bg-emerald-700 hover:bg-emerald-600 disabled:opacity-40 border-l border-emerald-500/40 text-white transition cursor-pointer"
                 title="More export options"
               >
                 <ChevronDown className="w-3.5 h-3.5" />
@@ -469,13 +682,37 @@ export default function CustomerUpdateReportView({ refreshTrigger, onNavigateToE
           {/* Print Button */}
           <button
             onClick={handlePrint}
-            className="flex items-center space-x-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-lg shadow-indigo-600/20 transition cursor-pointer"
+            className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-lg shadow-indigo-600/20 transition cursor-pointer"
           >
             <Printer className="w-4 h-4" />
             <span className="hidden sm:inline">Print</span>
           </button>
         </div>
       </div>
+
+      {/* Sync Status Banner / Alert */}
+      {syncNotice && (
+        <div className={`p-4 rounded-2xl flex items-center justify-between space-x-3 text-xs font-semibold animate-fade-in shadow-lg ${
+          syncNotice.type === 'success'
+            ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-200'
+            : 'bg-rose-500/15 border border-rose-500/30 text-rose-200'
+        }`}>
+          <div className="flex items-center space-x-2.5">
+            {syncNotice.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+            ) : (
+              <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+            )}
+            <span>{syncNotice.message}</span>
+          </div>
+          <button
+            onClick={() => setSyncNotice(null)}
+            className="text-slate-400 hover:text-white p-1"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* 2. Month Selector Toolbar */}
       <div className="glass-card p-4 rounded-2xl border border-slate-800 flex flex-wrap items-center justify-between gap-4 no-print">
@@ -582,6 +819,25 @@ export default function CustomerUpdateReportView({ refreshTrigger, onNavigateToE
             </button>
           </div>
 
+          {/* EasyEBilling Sync Status Filter */}
+          <div className="flex items-center space-x-1.5 bg-slate-900 px-3 py-1.5 rounded-xl border border-slate-800 text-xs">
+            <CloudLightning className="w-3.5 h-3.5 text-amber-400" />
+            <span className="text-slate-400 text-[11px] font-semibold">Sync:</span>
+            <select
+              value={syncStatusFilter}
+              onChange={(e) => {
+                setSyncStatusFilter(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="bg-transparent text-xs text-amber-300 font-extrabold outline-none cursor-pointer"
+            >
+              <option value="all" className="bg-slate-900 text-slate-200">All Sync States</option>
+              <option value="pending" className="bg-slate-900 text-amber-300">Pending Sync</option>
+              <option value="synced" className="bg-slate-900 text-emerald-300">Synced to Billing</option>
+              <option value="failed" className="bg-slate-900 text-rose-300">Sync Failed</option>
+            </select>
+          </div>
+
         </div>
 
         {/* Selected Month Badge / Counter */}
@@ -613,31 +869,31 @@ export default function CustomerUpdateReportView({ refreshTrigger, onNavigateToE
               </p>
             </div>
             <div className="text-right text-xs text-slate-800">
-              <p className="font-bold">AutoExcel Enterprise Engine</p>
+              <p className="font-bold">AutoExcel Enterprise Engine & EasyEBilling</p>
               <p>Total Records: {totalCount} | Printed: {new Date().toLocaleString()}</p>
             </div>
           </div>
         </div>
 
-        {/* 3. Key Summary KPI Metric Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 print-stats-grid">
+        {/* 3. Key Summary KPI Metric Cards (5 Cards) */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5 print-stats-grid">
           
           {/* Total Updates */}
           <div className="glass-card p-4 rounded-2xl border border-slate-800 bg-slate-900/60 relative overflow-hidden print-stat-box">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider print:text-black">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider print:text-black">
                 Total Modifications
               </span>
-              <div className="p-2 rounded-xl bg-amber-500/10 text-amber-400 no-print">
-                <History className="w-4 h-4" />
+              <div className="p-1.5 rounded-xl bg-amber-500/10 text-amber-400 no-print">
+                <History className="w-3.5 h-3.5" />
               </div>
             </div>
-            <div className="mt-3">
-              <div className="text-2xl font-black text-amber-300 print:text-black">
+            <div className="mt-2.5">
+              <div className="text-xl sm:text-2xl font-black text-amber-300 print:text-black">
                 {loading ? '...' : (stats?.total_updates ?? totalCount).toLocaleString()}
               </div>
               <p className="text-[10px] text-slate-400 print:text-slate-700 mt-0.5">
-                Field changes logged in {selectedMonth === 'all' ? 'total' : selectedMonth}
+                Field changes logged
               </p>
             </div>
           </div>
@@ -645,19 +901,59 @@ export default function CustomerUpdateReportView({ refreshTrigger, onNavigateToE
           {/* Unique Customers Modified */}
           <div className="glass-card p-4 rounded-2xl border border-slate-800 bg-slate-900/60 relative overflow-hidden print-stat-box">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider print:text-black">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider print:text-black">
                 Unique Customers
               </span>
-              <div className="p-2 rounded-xl bg-indigo-500/10 text-indigo-400 no-print">
-                <Users className="w-4 h-4" />
+              <div className="p-1.5 rounded-xl bg-indigo-500/10 text-indigo-400 no-print">
+                <Users className="w-3.5 h-3.5" />
               </div>
             </div>
-            <div className="mt-3">
-              <div className="text-2xl font-black text-white print:text-black">
+            <div className="mt-2.5">
+              <div className="text-xl sm:text-2xl font-black text-white print:text-black">
                 {loading ? '...' : (stats?.unique_customers || 0).toLocaleString()}
               </div>
               <p className="text-[10px] text-slate-400 print:text-slate-700 mt-0.5">
-                Distinct customer IDs edited
+                Distinct customer IDs
+              </p>
+            </div>
+          </div>
+
+          {/* Pending EasyEBilling Sync */}
+          <div className="glass-card p-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 relative overflow-hidden print-stat-box">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold text-amber-300 uppercase tracking-wider print:text-black">
+                Pending Billing Sync
+              </span>
+              <div className="p-1.5 rounded-xl bg-amber-500/20 text-amber-400 no-print">
+                <Clock className="w-3.5 h-3.5" />
+              </div>
+            </div>
+            <div className="mt-2.5">
+              <div className="text-xl sm:text-2xl font-black text-amber-400 print:text-black">
+                {loading ? '...' : (stats?.pending_sync || 0).toLocaleString()}
+              </div>
+              <p className="text-[10px] text-amber-300/80 print:text-slate-700 mt-0.5">
+                Awaiting push to cloud
+              </p>
+            </div>
+          </div>
+
+          {/* Synced to EasyEBilling */}
+          <div className="glass-card p-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 relative overflow-hidden print-stat-box">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold text-emerald-300 uppercase tracking-wider print:text-black">
+                Synced to Billing
+              </span>
+              <div className="p-1.5 rounded-xl bg-emerald-500/20 text-emerald-400 no-print">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+              </div>
+            </div>
+            <div className="mt-2.5">
+              <div className="text-xl sm:text-2xl font-black text-emerald-300 print:text-black">
+                {loading ? '...' : (stats?.synced_count || 0).toLocaleString()}
+              </div>
+              <p className="text-[10px] text-emerald-300/80 print:text-slate-700 mt-0.5">
+                Active in EasyEBilling
               </p>
             </div>
           </div>
@@ -665,39 +961,19 @@ export default function CustomerUpdateReportView({ refreshTrigger, onNavigateToE
           {/* Top Field Changed */}
           <div className="glass-card p-4 rounded-2xl border border-slate-800 bg-slate-900/60 relative overflow-hidden print-stat-box">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider print:text-black">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider print:text-black">
                 Top Edited Field
               </span>
-              <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 no-print">
-                <Tag className="w-4 h-4" />
+              <div className="p-1.5 rounded-xl bg-purple-500/10 text-purple-400 no-print">
+                <Tag className="w-3.5 h-3.5" />
               </div>
             </div>
-            <div className="mt-3">
-              <div className="text-lg font-black text-emerald-300 truncate print:text-black" title={stats?.top_fields?.[0]?.field_name || 'N/A'}>
+            <div className="mt-2.5">
+              <div className="text-base sm:text-lg font-black text-purple-300 truncate print:text-black" title={stats?.top_fields?.[0]?.field_name || 'N/A'}>
                 {loading ? '...' : (stats?.top_fields?.[0]?.field_name || 'None')}
               </div>
               <p className="text-[10px] text-slate-400 print:text-slate-700 mt-0.5">
                 {stats?.top_fields?.[0] ? `${stats.top_fields[0].count} edits logged` : 'No data'}
-              </p>
-            </div>
-          </div>
-
-          {/* Active Editors / Users */}
-          <div className="glass-card p-4 rounded-2xl border border-slate-800 bg-slate-900/60 relative overflow-hidden print-stat-box">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider print:text-black">
-                Primary Editor
-              </span>
-              <div className="p-2 rounded-xl bg-purple-500/10 text-purple-400 no-print">
-                <User className="w-4 h-4" />
-              </div>
-            </div>
-            <div className="mt-3">
-              <div className="text-lg font-black text-purple-300 truncate print:text-black" title={stats?.top_editors?.[0]?.edited_by || 'Admin'}>
-                {loading ? '...' : (stats?.top_editors?.[0]?.edited_by || 'Admin User')}
-              </div>
-              <p className="text-[10px] text-slate-400 print:text-slate-700 mt-0.5">
-                {stats?.top_editors?.[0] ? `${stats.top_editors[0].count} edits by user` : 'Active audit trail'}
               </p>
             </div>
           </div>
@@ -760,27 +1036,67 @@ export default function CustomerUpdateReportView({ refreshTrigger, onNavigateToE
                   <table className="w-full text-left text-xs border-collapse">
                     <thead>
                       <tr className="bg-slate-900/90 text-slate-400 uppercase font-semibold text-[11px] border-b border-slate-800">
-                        <th className="py-3 px-4">Date & Time</th>
-                        <th className="py-3 px-4">Customer ID</th>
-                        <th className="py-3 px-4">Customer Name</th>
-                        <th className="py-3 px-4">Field Changed</th>
-                        <th className="py-3 px-4">Old Value</th>
-                        <th className="py-3 px-2 text-center"></th>
-                        <th className="py-3 px-4">New Value</th>
-                        <th className="py-3 px-4">Edited By</th>
-                        <th className="py-3 px-4">Billing Month</th>
+                        {/* Select All Checkbox */}
+                        <th className="py-3 px-3 w-8 no-print text-center">
+                          <button
+                            type="button"
+                            onClick={toggleSelectAll}
+                            className="text-slate-400 hover:text-white cursor-pointer"
+                            title="Select all logs on this page"
+                          >
+                            {selectedIds.length === logs.length && logs.length > 0 ? (
+                              <CheckSquare className="w-4 h-4 text-amber-400" />
+                            ) : (
+                              <Square className="w-4 h-4" />
+                            )}
+                          </button>
+                        </th>
+                        <th className="py-3 px-3">Date & Time</th>
+                        <th className="py-3 px-3">Customer ID</th>
+                        <th className="py-3 px-3">Customer Name</th>
+                        <th className="py-3 px-3">Field Changed</th>
+                        <th className="py-3 px-3">Old Value</th>
+                        <th className="py-3 px-1 text-center"></th>
+                        <th className="py-3 px-3">New Value</th>
+                        <th className="py-3 px-3 text-center">EasyEBilling Sync</th>
+                        <th className="py-3 px-3">Edited By</th>
+                        <th className="py-3 px-3">Month</th>
+                        <th className="py-3 px-3 text-right no-print">Sync Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800/60 bg-slate-950/40">
                       {logs.map((item, idx) => {
                         const rec = item.customer_record;
                         const billingM = rec?.billing_month || item.processed_file?.billing_month || 'N/A';
+                        const isSelected = selectedIds.includes(item.id);
+                        const isSyncing = syncingId === item.id;
+                        const isSynced = item.billing_sync_status === 'synced';
+                        const isFailed = item.billing_sync_status === 'failed';
 
                         return (
-                          <tr key={item.id || idx} className="hover:bg-slate-800/40 font-medium transition">
+                          <tr
+                            key={item.id || idx}
+                            className={`hover:bg-slate-800/40 font-medium transition ${
+                              isSelected ? 'bg-amber-500/10' : ''
+                            }`}
+                          >
+                            {/* Checkbox */}
+                            <td className="py-3 px-3 no-print text-center">
+                              <button
+                                type="button"
+                                onClick={() => toggleSelectRow(item.id)}
+                                className="text-slate-400 hover:text-white cursor-pointer"
+                              >
+                                {isSelected ? (
+                                  <CheckSquare className="w-4 h-4 text-amber-400" />
+                                ) : (
+                                  <Square className="w-4 h-4 text-slate-600" />
+                                )}
+                              </button>
+                            </td>
                             
                             {/* Timestamp */}
-                            <td className="py-3 px-4 text-slate-400 whitespace-nowrap font-mono text-[11px] print:text-black">
+                            <td className="py-3 px-3 text-slate-400 whitespace-nowrap font-mono text-[11px] print:text-black">
                               <span className="flex items-center space-x-1.5">
                                 <Clock className="w-3.5 h-3.5 text-slate-500 no-print" />
                                 <span>{formatTimestamp(item.created_at)}</span>
@@ -788,24 +1104,31 @@ export default function CustomerUpdateReportView({ refreshTrigger, onNavigateToE
                             </td>
 
                             {/* Customer ID */}
-                            <td className="py-3 px-4 font-mono font-bold text-amber-300 print:text-black whitespace-nowrap">
-                              {item.customer_id || ('ID #' + item.customer_record_id)}
+                            <td className="py-3 px-3 font-mono font-bold text-amber-300 print:text-black whitespace-nowrap">
+                              <button
+                                onClick={() => setActiveBillingCustomer(item.customer_id)}
+                                className="hover:underline flex items-center space-x-1 text-left cursor-pointer group"
+                                title="Click to view live EasyEBilling cloud profile & ledger"
+                              >
+                                <span>{item.customer_id || ('ID #' + item.customer_record_id)}</span>
+                                <ExternalLink className="w-3 h-3 text-slate-500 group-hover:text-amber-400 opacity-0 group-hover:opacity-100 transition no-print" />
+                              </button>
                             </td>
 
                             {/* Customer Name */}
-                            <td className="py-3 px-4 text-white font-bold max-w-xs truncate print:text-black" title={item.customer_name}>
+                            <td className="py-3 px-3 text-white font-bold max-w-xs truncate print:text-black" title={item.customer_name}>
                               {item.customer_name || 'N/A'}
                             </td>
 
                             {/* Field Name */}
-                            <td className="py-3 px-4 whitespace-nowrap">
-                              <span className="px-2.5 py-0.5 rounded-lg bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[11px] font-extrabold print:border-black print:text-black">
+                            <td className="py-3 px-3 whitespace-nowrap">
+                              <span className="px-2 py-0.5 rounded-lg bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[11px] font-extrabold print:border-black print:text-black">
                                 {item.field_name}
                               </span>
                             </td>
 
                             {/* Old Value */}
-                            <td className="py-3 px-4 max-w-xs">
+                            <td className="py-3 px-3 max-w-xs">
                               <div className="p-1.5 rounded-lg bg-rose-500/10 border border-rose-500/25 text-rose-300 font-mono text-[11px] truncate print:border-black print:text-black" title={item.old_value || '(empty)'}>
                                 {item.old_value !== null && item.old_value !== '' ? item.old_value : <em className="text-slate-600 font-normal">None</em>}
                               </div>
@@ -817,12 +1140,12 @@ export default function CustomerUpdateReportView({ refreshTrigger, onNavigateToE
                             </td>
 
                             {/* Arrow Indicator */}
-                            <td className="py-3 px-2 text-center text-amber-400 no-print">
+                            <td className="py-3 px-1 text-center text-amber-400 no-print">
                               <ArrowRight className="w-3.5 h-3.5 mx-auto" />
                             </td>
 
                             {/* New Value */}
-                            <td className="py-3 px-4 max-w-xs">
+                            <td className="py-3 px-3 max-w-xs">
                               <div className="p-1.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-mono font-bold text-[11px] truncate print:border-black print:text-black" title={item.new_value || '(empty)'}>
                                 {item.new_value !== null && item.new_value !== '' ? item.new_value : <em className="text-slate-600 font-normal">Cleared</em>}
                               </div>
@@ -835,8 +1158,37 @@ export default function CustomerUpdateReportView({ refreshTrigger, onNavigateToE
                               )}
                             </td>
 
+                            {/* EasyEBilling Sync Status */}
+                            <td className="py-3 px-3 text-center whitespace-nowrap">
+                              {isSynced ? (
+                                <span
+                                  className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+                                  title={`Synced to EasyEBilling! ${item.billing_synced_at ? `At: ${formatTimestamp(item.billing_synced_at)}` : ''} ${item.billing_pk ? `(PK: ${item.billing_pk})` : ''}`}
+                                >
+                                  <Check className="w-3 h-3 text-emerald-400" />
+                                  <span>Synced</span>
+                                </span>
+                              ) : isFailed ? (
+                                <span
+                                  className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-rose-500/20 text-rose-300 border border-rose-500/40 cursor-help"
+                                  title={`Sync Failed: ${item.billing_sync_error || 'Unknown error'}`}
+                                >
+                                  <AlertTriangle className="w-3 h-3 text-rose-400" />
+                                  <span>Failed</span>
+                                </span>
+                              ) : (
+                                <span
+                                  className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/40"
+                                  title="Not yet synced to EasyEBilling"
+                                >
+                                  <Clock className="w-3 h-3 text-amber-400" />
+                                  <span>Pending</span>
+                                </span>
+                              )}
+                            </td>
+
                             {/* Edited By */}
-                            <td className="py-3 px-4 text-slate-300 whitespace-nowrap print:text-black">
+                            <td className="py-3 px-3 text-slate-300 whitespace-nowrap print:text-black">
                               <span className="flex items-center space-x-1.5">
                                 <User className="w-3.5 h-3.5 text-indigo-400 no-print" />
                                 <span>{item.edited_by || 'Admin'}</span>
@@ -844,10 +1196,45 @@ export default function CustomerUpdateReportView({ refreshTrigger, onNavigateToE
                             </td>
 
                             {/* Billing Month */}
-                            <td className="py-3 px-4 text-slate-400 text-[11px] whitespace-nowrap print:text-black">
+                            <td className="py-3 px-3 text-slate-400 text-[11px] whitespace-nowrap print:text-black">
                               <span className="px-2 py-0.5 rounded-md bg-slate-900 border border-slate-800 text-slate-300">
                                 {billingM}
                               </span>
+                            </td>
+
+                            {/* Sync Action Buttons */}
+                            <td className="py-3 px-3 text-right whitespace-nowrap no-print">
+                              <div className="flex items-center justify-end space-x-1.5">
+                                {/* Sync Single Button */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleSyncSingle(item)}
+                                  disabled={isSyncing}
+                                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition flex items-center space-x-1 cursor-pointer ${
+                                    isSynced
+                                      ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+                                      : 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border-amber-500/40'
+                                  }`}
+                                  title={isSynced ? "Re-sync this update to EasyEBilling" : "Push this update directly to EasyEBilling"}
+                                >
+                                  {isSyncing ? (
+                                    <RefreshCw className="w-3 h-3 animate-spin text-amber-400" />
+                                  ) : (
+                                    <Send className="w-3 h-3 text-amber-400" />
+                                  )}
+                                  <span>{isSyncing ? 'Syncing...' : isSynced ? 'Re-sync' : 'Sync'}</span>
+                                </button>
+
+                                {/* Live Customer Profile View */}
+                                <button
+                                  type="button"
+                                  onClick={() => setActiveBillingCustomer(item.customer_id)}
+                                  className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition cursor-pointer"
+                                  title="View Live EasyEBilling Cloud Profile & Ledger"
+                                >
+                                  <ExternalLink className="w-3.5 h-3.5 text-blue-400" />
+                                </button>
+                              </div>
                             </td>
 
                           </tr>
@@ -977,6 +1364,15 @@ export default function CustomerUpdateReportView({ refreshTrigger, onNavigateToE
         </div>
 
       </div>
+
+      {/* EasyEBilling Real-time Cloud Customer Modal */}
+      {activeBillingCustomer && (
+        <EasyEBillingCustomerModal
+          customerId={activeBillingCustomer}
+          onClose={() => setActiveBillingCustomer(null)}
+          onSyncSuccess={fetchReport}
+        />
+      )}
 
     </div>
   );

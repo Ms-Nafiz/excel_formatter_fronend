@@ -253,24 +253,91 @@ export default function MonthlyComparisonView({ refreshTrigger }) {
   }, [comparisonData, activeTab]);
 
   // Format Address for connection audit display and export:
-  // If building name exists, show building name (or add_combined with building name)
-  // If building name does not exist, show area name (or add_combined with area name)
+  // Combines House No, Flat No, Building Name, and Area Name properly (ensuring House and Flat are not lost)
   const formatDisplayAddress = (item) => {
     if (!item) return '';
-    const bldg = (item.building_name && item.building_name !== 'N/A') ? String(item.building_name).trim() : '';
-    const area = (item.area_name && item.area_name !== 'N/A') ? String(item.area_name).trim() : '';
-    const rawAdd = (item.add_combined && item.add_combined !== 'N/A') ? String(item.add_combined).trim() : '';
 
+    const cleanVal = (val) => {
+      if (!val) return '';
+      const s = String(val).trim();
+      if (['n/a', 'null', '-', 'undefined', '.', ',', '_'].includes(s.toLowerCase())) return '';
+      if (/^[.\-,\s_]+$/.test(s)) return '';
+      return s;
+    };
+
+    const hVal = cleanVal(item.house_no);
+    const fVal = cleanVal(item.flat_no);
+    const bldg = cleanVal(item.building_name);
+    const area = cleanVal(item.area_name);
+    const rawAdd = cleanVal(item.add_combined || item.address);
+
+    // Build house-flat component (hf)
+    let hf = '';
+    if (hVal && fVal) {
+      hf = hVal.toLowerCase() === fVal.toLowerCase() ? hVal : `${hVal}-${fVal}`;
+    } else if (hVal) {
+      hf = hVal;
+    } else if (fVal) {
+      hf = fVal;
+    }
+
+    // If rawAdd already contains the house/flat and building/area, we can safely use it
+    if (rawAdd) {
+      const lowerRaw = rawAdd.toLowerCase();
+      const hasH = !hVal || lowerRaw.includes(hVal.toLowerCase());
+      const hasF = !fVal || lowerRaw.includes(fVal.toLowerCase());
+      const hasB = !bldg || lowerRaw.includes(bldg.toLowerCase());
+      if (hasH && hasF && hasB) {
+        return rawAdd;
+      }
+    }
+
+    // If we have house/flat:
+    if (hf) {
+      if (bldg) {
+        if (hf.toLowerCase() === bldg.toLowerCase()) {
+          return bldg;
+        }
+        if (hf.toLowerCase().includes(bldg.toLowerCase())) {
+          return hf;
+        }
+        if (hVal.toLowerCase() === bldg.toLowerCase() && fVal) {
+          return `${fVal}, ${bldg}`;
+        }
+        return `${hf}, ${bldg}`;
+      }
+
+      if (area) {
+        if (hf.toLowerCase().includes(area.toLowerCase())) {
+          return hf;
+        }
+        return `${hf}, ${area}`;
+      }
+
+      return hf;
+    }
+
+    // Fallback when no house/flat was provided
     if (bldg) {
       if (rawAdd) {
-        return rawAdd.toLowerCase().includes(bldg.toLowerCase()) ? rawAdd : `${rawAdd}, ${bldg}`;
+        const lowerRaw = rawAdd.toLowerCase();
+        const lowerBldg = bldg.toLowerCase();
+        if (lowerRaw === lowerBldg) {
+          return bldg;
+        }
+        return lowerRaw.includes(lowerBldg) ? rawAdd : `${rawAdd}, ${bldg}`;
       }
       return bldg;
     }
 
     if (area) {
       if (rawAdd) {
-        return rawAdd.toLowerCase().includes(area.toLowerCase()) ? rawAdd : `${rawAdd}, ${area}`;
+        const lowerRaw = rawAdd.toLowerCase();
+        const lowerArea = area.toLowerCase();
+        if (lowerRaw === lowerArea) {
+          return area;
+        }
+        return lowerRaw.includes(lowerArea) ? rawAdd : `${rawAdd}, ${area}`;
       }
       return area;
     }
@@ -290,6 +357,8 @@ export default function MonthlyComparisonView({ refreshTrigger }) {
         (item.full_name && String(item.full_name).toLowerCase().includes(q)) ||
         (displayAddr && displayAddr.toLowerCase().includes(q)) ||
         (item.add_combined && String(item.add_combined).toLowerCase().includes(q)) ||
+        (item.house_no && String(item.house_no).toLowerCase().includes(q)) ||
+        (item.flat_no && String(item.flat_no).toLowerCase().includes(q)) ||
         (item.area_name && String(item.area_name).toLowerCase().includes(q)) ||
         (item.building_name && String(item.building_name).toLowerCase().includes(q)) ||
         (item.collector_name && String(item.collector_name).toLowerCase().includes(q)) ||
@@ -454,14 +523,27 @@ export default function MonthlyComparisonView({ refreshTrigger }) {
           'Previous Dues': Number(item.previous_dues || 0),
           'Area': item.area_name || '',
           'Building': item.building_name || '',
+          'House No': item.house_no || '',
+          'Flat No': item.flat_no || '',
           'Billing Month': item.billing_month || ''
         }));
 
         const ws = XLSX.utils.json_to_sheet(rows.length > 0 ? rows : [{ 'Note': 'No records available' }]);
         ws['!cols'] = [
-          { wch: 6 }, { wch: 16 }, { wch: 28 }, { wch: 38 },
-          { wch: 16 }, { wch: 12 }, { wch: 22 }, { wch: 16 },
-          { wch: 16 }, { wch: 20 }, { wch: 20 }, { wch: 16 }
+          { wch: 6 },  // SL
+          { wch: 16 }, // Customer ID
+          { wch: 28 }, // Customer Name
+          { wch: 38 }, // Address
+          { wch: 16 }, // Customer Type
+          { wch: 12 }, // Category
+          { wch: 22 }, // Collector
+          { wch: 16 }, // Monthly Rent
+          { wch: 16 }, // Previous Dues
+          { wch: 20 }, // Area
+          { wch: 20 }, // Building
+          { wch: 12 }, // House No
+          { wch: 12 }, // Flat No
+          { wch: 16 }  // Billing Month
         ];
         XLSX.utils.book_append_sheet(wb, ws, sheetName);
       });

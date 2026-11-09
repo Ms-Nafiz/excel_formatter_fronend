@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
 import { invalidateFileDataCache } from './AdvancePrintModal';
 import CustomerEditHistoryModal from './CustomerEditHistoryModal';
+import EasyEBillingCustomerModal from './EasyEBillingCustomerModal';
 import SearchableSelect from './SearchableSelect';
 import {
   Zap,
@@ -21,7 +22,8 @@ import {
   Target,
   CheckSquare,
   Square,
-  History
+  History,
+  Cloud
 } from 'lucide-react';
 
 export default function CustomerIdSearchEditor({ refreshTrigger, onDataChange, onNavigateToAudit }) {
@@ -34,6 +36,7 @@ export default function CustomerIdSearchEditor({ refreshTrigger, onDataChange, o
   const [searching, setSearching] = useState(false);
   const [savingRecordId, setSavingRecordId] = useState(null);
   const [activeHistoryRecord, setActiveHistoryRecord] = useState(null);
+  const [activeBillingCustomer, setActiveBillingCustomer] = useState(null);
 
   // Database lookup options for dropdown selects: { buildings: [], areas: [], collectors: [] }
   const [lookupOptions, setLookupOptions] = useState({ buildings: [], areas: [], collectors: [] });
@@ -685,8 +688,19 @@ export default function CustomerIdSearchEditor({ refreshTrigger, onDataChange, o
                           </div>
                         </div>
 
-                        {/* Actions: View History & Save Record */}
+                        {/* Actions: View History, EasyEBilling & Save Record */}
                         <div className="flex items-center space-x-2 w-full sm:w-auto justify-end">
+                          {/* EasyEBilling Live Profile Button */}
+                          <button
+                            type="button"
+                            onClick={() => setActiveBillingCustomer(rec.customer_id)}
+                            className="px-3 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-bold text-xs rounded-xl border border-slate-700 transition flex items-center space-x-1.5 cursor-pointer"
+                            title="View Live EasyEBilling Cloud Profile & Ledger for this Customer"
+                          >
+                            <Cloud className="w-4 h-4 text-emerald-400" />
+                            <span className="hidden sm:inline">Billing Live</span>
+                          </button>
+
                           {/* History Button */}
                           <button
                             type="button"
@@ -728,6 +742,15 @@ export default function CustomerIdSearchEditor({ refreshTrigger, onDataChange, o
           customerId={activeHistoryRecord.customer_id}
           customerName={activeHistoryRecord.full_name}
           onClose={() => setActiveHistoryRecord(null)}
+        />
+      )}
+
+      {/* EasyEBilling Cloud Profile Modal */}
+      {activeBillingCustomer && (
+        <EasyEBillingCustomerModal
+          customerId={activeBillingCustomer}
+          onClose={() => setActiveBillingCustomer(null)}
+          onSyncSuccess={fetchLookupOptions}
         />
       )}
 
