@@ -1125,6 +1125,11 @@ export default function CustomerUpdateReportView({ refreshTrigger, onNavigateToE
                               <span className="px-2 py-0.5 rounded-lg bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[11px] font-extrabold print:border-black print:text-black">
                                 {item.field_name}
                               </span>
+                              {/due|baki|bokea/i.test(item.field_name) && (
+                                <div className="text-[10px] text-amber-400 font-medium mt-0.5 no-print" title="EasyEBilling dues is non-editable. Syncs to Discount field (if new=0 -> applies old dues, if new>0 -> applies new dues)">
+                                  ⚡ Syncs as Discount ({Number(item.new_value || 0) <= 0 ? `৳${Number(item.old_value || 0).toLocaleString()}` : `৳${Number(item.new_value || 0).toLocaleString()}`})
+                                </div>
+                              )}
                             </td>
 
                             {/* Old Value */}
